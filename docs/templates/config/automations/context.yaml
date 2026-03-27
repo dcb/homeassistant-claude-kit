@@ -1,0 +1,344 @@
+###############################################################################
+# Context / Scene State Machine
+#
+# Manages a hierarchy of activity modes (night > movie > work) using
+# input_boolean helpers. Higher modes clear lower ones on activation.
+# Notification-based activation with dedup flag system prevents re-prompting.
+#
+# Patterns demonstrated:
+#   1. Mode hierarchy: night clears movie + work; movie clears work
+#   2. Auto-on: desk occupancy → work mode (with work_mode_auto guard)
+#   3. Auto-off: vacancy timeout → work mode off
+#   4. Notification prompt + action response (night mode, movie mode)
+#   5. Notification dedup via event flags (prevents re-prompting same session)
+#   6. Night mode auto-off at sunrise or 07:00 (whichever is later)
+#   7. TV sleep timers (optional)
+#
+# Notification flag system:
+#   Fire 'notification_sent' event with category/key/value to set a flag.
+#   Fire 'notification_reset' event with category/key to clear it.
+#   A template sensor 'your_notification_registry' tracks active flags.
+#   See configuration.yaml template for the registry sensor definition.
+#
+# Entities to replace:
+#   your_night_mode            — input_boolean
+#   your_movie_mode            — input_boolean
+#   your_work_mode             — input_boolean
+#   your_work_mode_auto        — input_boolean: auto work mode on desk occupancy
+#   your_movie_mode_auto       — input_boolean: auto movie mode prompt
+#   your_away_mode             — input_boolean
+#   your_desk_occupancy        — binary_sensor (mmWave or radar sensor)
+#   your_projector             — media_player
+#   your_couch_occupancy       — binary_sensor (presence on couch)
+#   your_bedroom_tv            — remote or media_player entity
+#   your_notify_target         — notify service
+#   your_notification_registry — sensor: tracks notification flags (see config template)
+#   your_day_type              — sensor: 'work_day' | 'weekend'
+#   your_night_time_work_day   — input_datetime
+#   your_night_time_weekend    — input_datetime
+###############################################################################
+
+# ── Mode Hierarchy ────────────────────────────────────────────────────────────
+
+- id: 'context_clear_lower_on_night'
+  alias: Context - Clear Lower Scenes on Night Mode
+  description: Night mode takes priority — clears movie and work mode
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_night_mode
+    to: 'on'
+  conditions: []
+  actions:
+  - action: input_boolean.turn_off
+    target:
+      entity_id:
+      - input_boolean.your_movie_mode
+      - input_boolean.your_work_mode
+  mode: single
+
+
+- id: 'context_clear_work_on_movie'
+  alias: Context - Clear Work on Movie Mode
+  description: Movie mode clears work mode
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_movie_mode
+    to: 'on'
+  conditions: []
+  actions:
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.your_work_mode
+  mode: single
+
+
+# ── Work Mode Auto-Activation ─────────────────────────────────────────────────
+
+- id: 'context_work_mode_auto_start'
+  alias: Context - Work Mode Auto Start
+  description: Auto-activate work mode when desk occupied for 20 seconds
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.your_desk_occupancy
+    to: 'on'
+    for:
+      seconds: 20
+  conditions:
+  - condition: state
+    entity_id: input_boolean.your_work_mode_auto
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.your_work_mode
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.your_movie_mode
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.your_night_mode
+    state: 'off'
+  actions:
+  - action: input_boolean.turn_on
+    target:
+      entity_id: input_boolean.your_work_mode
+  mode: single
+
+
+- id: 'context_work_mode_auto_stop'
+  alias: Context - Work Mode Auto Stop
+  description: Auto-deactivate work mode when desk vacant for 5 minutes
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.your_desk_occupancy
+    to: 'off'
+    for:
+      minutes: 5
+  conditions:
+  - condition: state
+    entity_id: input_boolean.your_work_mode
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.your_work_mode_auto
+    state: 'on'
+  actions:
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.your_work_mode
+  mode: single
+
+
+# ── Night Mode: Notification Prompt ──────────────────────────────────────────
+
+- id: 'context_night_mode_prompt'
+  alias: Context - Night Mode Prompt on Bedroom TV
+  description: Send notification when bedroom TV turns on after bedtime
+  triggers:
+  - trigger: state
+    entity_id: remote.your_bedroom_tv
+    to: 'on'
+  conditions:
+  - condition: state
+    entity_id: input_boolean.your_night_mode
+    state: 'off'
+  - condition: template
+    value_template: >
+      {% set day = states('sensor.your_day_type') %}
+      {% if day == 'work_day' %}
+        {% set bedtime = states('input_datetime.your_night_time_work_day') %}
+      {% else %}
+        {% set bedtime = states('input_datetime.your_night_time_weekend') %}
+      {% endif %}
+      {% set bt = today_at(bedtime[:5]) %}
+      {% set wakeup = today_at('07:00') %}
+      {{ (bt > wakeup and (now() >= bt or now() < wakeup))
+         or (bt <= wakeup and bt <= now() < wakeup) }}
+  - condition: state
+    entity_id: input_boolean.your_away_mode
+    state: 'off'
+  - condition: template
+    value_template: >
+      {{ 'night_mode' not in (state_attr('sensor.your_notification_registry', 'flags') or {}) }}
+  actions:
+  - action: notify.your_notify_target
+    data:
+      title: Night Mode
+      message: Bedroom TV is on. Activate night mode?
+      data:
+        actions:
+        - action: ACTIVATE_NIGHT_MODE
+          title: 'Yes'
+        - action: DISMISS_NIGHT_MODE
+          title: Not yet
+        push:
+          interruption-level: time-sensitive
+  - event: notification_sent
+    event_data:
+      category: flags
+      key: night_mode
+      value: true
+  mode: single
+
+
+- id: 'context_night_mode_response'
+  alias: Context - Night Mode Prompt Response
+  description: Handle night mode activation from notification
+  triggers:
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: ACTIVATE_NIGHT_MODE
+  conditions: []
+  actions:
+  - action: input_boolean.turn_on
+    target:
+      entity_id: input_boolean.your_night_mode
+  mode: single
+
+
+# ── Movie Mode: Notification Prompt ──────────────────────────────────────────
+
+- id: 'context_movie_mode_prompt'
+  alias: Context - Movie Mode Prompt
+  description: Notify when projector on + couch occupied + after sunset
+  triggers:
+  - trigger: state
+    entity_id: media_player.your_projector
+    to: 'on'
+  - trigger: state
+    entity_id: binary_sensor.your_couch_occupancy
+    to: 'on'
+  - trigger: sun
+    event: sunset
+  conditions:
+  - condition: state
+    entity_id: input_boolean.your_movie_mode_auto
+    state: 'on'
+  - condition: state
+    entity_id: input_boolean.your_movie_mode
+    state: 'off'
+  - condition: state
+    entity_id: input_boolean.your_night_mode
+    state: 'off'
+  - condition: state
+    entity_id: media_player.your_projector
+    state: 'on'
+  - condition: state
+    entity_id: binary_sensor.your_couch_occupancy
+    state: 'on'
+  - condition: sun
+    after: sunset
+  - condition: template
+    value_template: >
+      {{ 'movie_mode' not in (state_attr('sensor.your_notification_registry', 'flags') or {}) }}
+  actions:
+  - action: notify.your_notify_target
+    data:
+      title: Movie Mode
+      message: Projector is on and couch is occupied. Activate movie mode?
+      data:
+        actions:
+        - action: ACTIVATE_MOVIE_MODE
+          title: 'Yes'
+        - action: DISMISS_MOVIE_MODE
+          title: Not now
+        push:
+          interruption-level: time-sensitive
+  - event: notification_sent
+    event_data:
+      category: flags
+      key: movie_mode
+      value: true
+  mode: single
+
+
+- id: 'context_movie_mode_response'
+  alias: Context - Movie Mode Prompt Response
+  description: Handle movie mode activation from notification
+  triggers:
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: ACTIVATE_MOVIE_MODE
+  conditions: []
+  actions:
+  - action: input_boolean.turn_on
+    target:
+      entity_id: input_boolean.your_movie_mode
+  mode: single
+
+
+- id: 'context_movie_mode_notification_reset'
+  alias: Context - Movie Mode Notification Reset
+  description: Reset movie mode notification flag when projector turns off
+  triggers:
+  - trigger: state
+    entity_id: media_player.your_projector
+    to: 'off'
+  conditions:
+  - condition: template
+    value_template: >
+      {{ 'movie_mode' in (state_attr('sensor.your_notification_registry', 'flags') or {}) }}
+  actions:
+  - event: notification_reset
+    event_data:
+      category: flags
+      key: movie_mode
+  mode: single
+
+
+# ── Night Mode: Auto Off in the Morning ──────────────────────────────────────
+
+- id: 'context_night_mode_auto_off'
+  alias: Context - Night Mode Auto Off Morning
+  description: Turn off night mode at sunrise or 07:00, whichever is later
+  triggers:
+  - trigger: time
+    at: '07:00:00'
+  conditions:
+  - condition: state
+    entity_id: input_boolean.your_night_mode
+    state: 'on'
+  - condition: sun
+    after: sunrise
+  - condition: template
+    value_template: "{{ now().hour >= 7 }}"
+  actions:
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.your_night_mode
+  - event: notification_reset
+    event_data:
+      category: flags
+      key: night_mode
+  mode: single
+
+
+# ── TV Sleep Timers ───────────────────────────────────────────────────────────
+
+- alias: "TV Sleep Timer - Bedroom"
+  id: tv_sleep_timer_bedroom
+  description: "Turn off bedroom TV when sleep timer finishes"
+  mode: single
+  triggers:
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.your_tv_sleep_timer_bedroom
+  actions:
+  - action: remote.turn_off
+    target:
+      entity_id: remote.your_bedroom_tv
+
+
+- alias: "TV Sleep Timer - Living Room"
+  id: tv_sleep_timer_living_room
+  description: "Turn off living room TV/projector when sleep timer finishes"
+  mode: single
+  triggers:
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.your_tv_sleep_timer_living_room
+  actions:
+  - action: remote.turn_off
+    target:
+      entity_id: remote.your_projector

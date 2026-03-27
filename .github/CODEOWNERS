@@ -1,0 +1,13 @@
+# CODEOWNERS — require review for security-sensitive files
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Hooks and Claude Code settings are security-sensitive
+# Default — all files
+*                       @dcb
+
+# Security-sensitive files
+.claude/hooks/          @dcb
+.claude/settings.json   @dcb
+.github/workflows/      @dcb
+Makefile                @dcb
+tools/                  @dcb

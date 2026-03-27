@@ -1,0 +1,234 @@
+---
+name: setup-infrastructure
+description: >
+  Run when setting up this repo for the first time, configuring HA connection,
+  or verifying the infrastructure still works. Trigger phrases: "set up my HA",
+  "configure connection", "first time setup", "run setup", "reconnect to HA",
+  "my token stopped working", "verify my setup".
+---
+
+# Setup Infrastructure
+
+This skill configures the mechanical layer: HA API connectivity, SSH access, and
+initial config pull. It is **idempotent** — run it any time to verify or repair the
+connection without affecting your actual configuration.
+
+## Step 1: Data Consent
+
+**Only ask once per session.** If the user already consented during an earlier invocation
+of this skill in the same conversation, skip this step entirely.
+
+Before reading any Home Assistant data, inform the user:
+
+> "This skill will connect to your Home Assistant instance, read your entity registry,
+> and send that data to Anthropic's API as part of this Claude conversation. Your entity
+> IDs, area names, and device names will be visible in this session.
+> Continue? (yes / no)"
+
+If the user says no, stop here and explain they can still use the repo manually.
+
+## Step 2: Check .env
+
+Check whether `.env` exists in the repo root:
+
+```bash
+test -f .env && echo "exists" || echo "missing"
+```
+
+**If missing:** Tell the user to copy `.env.example` to `.env` and fill in:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `HA_TOKEN` | Long-lived access token (HA → Profile → Security → Long-Lived Access Tokens) | `eyJ...` |
+| `HA_URL` | Your HA URL (local or remote) | `http://homeassistant.local:8123` |
+| `HA_HOST` | SSH hostname, IP, or SSH config alias | `homeassistant.local` or `ha` |
+| `SSH_USER` | SSH add-on user (usually `root`) | `root` |
+| `HA_REMOTE_PATH` | Remote config directory (see note below) | `/config/` or `/homeassistant/` |
+| `VITE_GO2RTC_URL` | go2rtc URL (camera streams) — leave empty if not using cameras | `http://homeassistant.local:1984` |
+
+> **HA_REMOTE_PATH note:** HA OS with the SSH add-on typically uses `/homeassistant/`,
+> while HA Container/Supervised uses `/config/`. If unsure, the SSH test in Step 4 will
+> auto-detect the correct path.
+
+**IMPORTANT:** The `.env` file must NOT use inline comments on value lines (e.g.
+`HA_HOST=foo  # comment`). Makefile's `include` treats everything after `=` as the value,
+including `# ...` text. Use only full-line comments (lines starting with `#`).
+
+Wait for the user to fill in `.env` before continuing.
+
+**If exists:** Load the values and proceed.
+
+## Step 3: Validate HA API Token
+
+Test the HA API is reachable:
+
+```bash
+source .env && curl -sf -H "Authorization: Bearer $HA_TOKEN" "$HA_URL/api/" | python3 -c "import sys,json; d=json.load(sys.stdin); print('HA version:', d.get('version','unknown'))"
+```
+
+- **Success:** Print the HA version and continue.
+- **Failure:** Show the curl error. Common fixes:
+  - Token expired → generate a new one at HA → Profile → Security
+  - Wrong URL → check if HA is running, try `http://` vs `https://`
+  - Network unreachable → ensure you're on the same network, or check VPN/Nabu Casa
+
+## Step 4: Validate SSH Connectivity
+
+Test SSH access (required for `make pull` / `make push`).
+
+**IMPORTANT:** Always include `$SSH_USER@` in the SSH command. The `.env` has a separate
+`SSH_USER` variable (usually `root`) — do NOT connect as the local macOS/Linux user.
+
+```bash
+source .env && ssh -o ConnectTimeout=5 -o BatchMode=yes "$SSH_USER@$HA_HOST" "echo ok" 2>&1
+```
+
+- **Success (`ok`):** Continue to auto-detect `HA_REMOTE_PATH`.
+- **`Permission denied (publickey)`:** SSH key not authorized. Run:
+  ```bash
+  source .env && ssh-copy-id "$SSH_USER@$HA_HOST"
+  ```
+  Or manually add `~/.ssh/id_rsa.pub` (or `id_ed25519.pub`) to the SSH add-on's
+  authorized keys in HA Settings → Add-ons → SSH & Web Terminal → Configuration.
+- **`Connection refused` / `No route to host`:** SSH add-on not running or wrong hostname.
+  Check HA Settings → Add-ons → SSH & Web Terminal → Start.
+
+### Auto-detect HA_REMOTE_PATH
+
+After SSH is confirmed working, verify that `HA_REMOTE_PATH` points to the correct directory:
+
+```bash
+source .env && ssh "$SSH_USER@$HA_HOST" "test -f ${HA_REMOTE_PATH:-/config/}configuration.yaml && echo 'PATH_OK' || echo 'PATH_WRONG'"
+```
+
+**If `PATH_WRONG`:** Try the HA OS default path:
+```bash
+source .env && ssh "$SSH_USER@$HA_HOST" "test -f /homeassistant/configuration.yaml && echo '/homeassistant/' || (test -f /config/configuration.yaml && echo '/config/' || echo 'NOT_FOUND')"
+```
+
+Update `HA_REMOTE_PATH` in `.env` with the correct path before proceeding. If `NOT_FOUND`,
+ask the user to verify their HA configuration directory location.
+
+## Step 5: Generate Derived .env Files
+
+Once HA API + SSH are confirmed working, generate the derived config files:
+
+**`dashboard/.env.local`** (Vite dev server + runtime):
+```bash
+source .env
+cat > dashboard/.env.local << EOF
+# AUTO-GENERATED by setup-infrastructure — do not edit manually
+# Re-run the setup-infrastructure skill to regenerate.
+VITE_HA_URL=$HA_URL
+VITE_HA_TOKEN=$HA_TOKEN
+VITE_GO2RTC_URL=$VITE_GO2RTC_URL
+EOF
+```
+
+Confirm the file was written:
+```bash
+echo "dashboard/.env.local written"
+cat dashboard/.env.local
+```
+
+## Step 6: Run make pull
+
+Pull the current HA configuration to the local `config/` directory:
+
+```bash
+make pull
+```
+
+This syncs automations, scripts, `configuration.yaml`, and `.storage/` (entity/area registry)
+from your HA instance. The `.storage/` files are used by `setup-customize` for entity discovery.
+
+If `make pull` fails:
+- Check that `HA_REMOTE_PATH` in `.env` is correct — HA OS uses `/homeassistant/`, Container uses `/config/`
+- Verify SSH access in Step 4 (remember to use `$SSH_USER@$HA_HOST`)
+- Check `.env` has no inline comments (breaks Makefile `include`)
+- Run `make pull` manually and share the error
+
+## Step 7: Verify Python Tooling
+
+Check the Python validation tools work:
+
+```bash
+python3 -m venv venv 2>/dev/null || true && source venv/bin/activate && pip install -q pyyaml 2>/dev/null && python tools/yaml_validator.py config/ && echo "Validation tools OK"
+```
+
+If this fails, ensure Python 3.10+ is installed.
+
+## Step 8: Install ha-api / ha-ws on HA
+
+Install [claude-code-ha](https://github.com/danbuhler/claude-code-ha) CLI tools on the HA instance.
+These provide `ha-api` (REST) and `ha-ws` (WebSocket) for entity management, state queries,
+service calls, and entity renaming — all accessible via SSH.
+
+```bash
+source .env
+# Clone path adapts to HA_REMOTE_PATH (tools live alongside configuration.yaml)
+ssh "$SSH_USER@$HA_HOST" "test -d ${HA_REMOTE_PATH}claude-code-ha && echo 'ALREADY_INSTALLED' || (cd ${HA_REMOTE_PATH} && git clone https://github.com/danbuhler/claude-code-ha.git && echo 'CLONED')"
+ssh "$SSH_USER@$HA_HOST" "bash ${HA_REMOTE_PATH}claude-code-ha/install.sh"
+```
+
+Verify it works:
+
+```bash
+source .env && ssh "$SSH_USER@$HA_HOST" "source /etc/profile.d/claude-ha.sh; source ${HA_REMOTE_PATH}.env; ha-api domains"
+```
+
+If this prints entity counts by domain, the tools are working.
+
+> **Note:** HA OS updates reset the root filesystem (symlinks, pip packages). The repo
+> persists at `${HA_REMOTE_PATH}claude-code-ha/` but re-run the install script after each HA OS update:
+> `ssh "$SSH_USER@$HA_HOST" "bash ${HA_REMOTE_PATH}claude-code-ha/install.sh"`
+
+## Step 9: Write setup-state.json Checkpoint
+
+Write a checkpoint so `setup-customize` knows the infrastructure is ready:
+
+```python
+import json, datetime, os
+
+state = {
+    "schema_version": 1,
+    "infrastructure": {
+        "ha_url": os.environ.get("HA_URL", ""),
+        "configured_at": datetime.datetime.now().isoformat(),
+        "steps_completed": ["env", "token", "ssh", "pull", "venv", "ha_tools"]
+    },
+    "session": {
+        "current_phase": "infrastructure_complete",
+        "can_resume": True
+    }
+}
+with open("setup-state.json", "w") as f:
+    json.dump(state, f, indent=2)
+print("Checkpoint saved to setup-state.json")
+```
+
+Run this via: `source .env && python3 -c "$(cat << 'PYEOF'` ... `PYEOF`)"` — using a quoted heredoc to avoid shell expansion issues with the `.env` values.
+
+## Completion
+
+Tell the user:
+
+> "Infrastructure is ready. Your HA instance is connected and config has been pulled.
+>
+> **Next step:** Run `setup-customize` to map your rooms and entities to the dashboard.
+> Just say: 'set up my home' or 'run setup-customize'."
+
+If the user asks about what was pulled, run `ls config/` and show the directory structure.
+
+## Troubleshooting Reference
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `curl: (7) Failed to connect` | HA not reachable | Check URL, network, HA running |
+| `401 Unauthorized` | Bad/expired token | Generate new token in HA |
+| `ssh: connect to host ... port 22: Connection refused` | SSH add-on off | Start SSH add-on in HA |
+| `Permission denied (publickey)` | Key not authorized | `ssh-copy-id` or add key manually |
+| `rsync: [Errno 2] No such file` | Wrong `HA_REMOTE_PATH` | HA OS: `/homeassistant/`, Container: `/config/` |
+| `make: command not found` | macOS without Xcode tools | `xcode-select --install` |
+| `Permission denied` (as local user) | Missing `SSH_USER@` in command | Ensure `SSH_USER=root` in `.env` |
+| SSH works but `make pull` fails | Inline comments in `.env` | Remove `# ...` from value lines |

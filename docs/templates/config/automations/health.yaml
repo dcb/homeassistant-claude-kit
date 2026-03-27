@@ -1,0 +1,456 @@
+###############################################################################
+# System Health Automations
+#
+# Patterns demonstrated:
+#   1. Integration monitor: unavailable/unknown + HA startup check
+#   2. Auto-reload: try reload_config_entry before notifying
+#   3. Stale sensor detection: last_updated threshold check
+#   4. Integration watchdog: reload + stale heartbeat detection (OCPP pattern)
+#   5. Battery alert: numeric_state threshold across multiple sensors
+#   6. Disk/memory alert: system monitor sensors
+#   7. HA startup notification
+#
+# Key design:
+#   - startup trigger always delays 3-5 min to let integrations initialize
+#   - Try reload before alerting — most transient failures self-heal
+#   - Silence hours guard prevents critical notifications during sleep
+#
+# Entities to replace:
+#   your_notify_target            — notify service
+#   your_silence_hours            — binary_sensor (e.g. night mode or quiet hours)
+#   your_key_entity_*             — one representative entity per integration to monitor
+#   your_charger_status           — OCPP connector sensor (for charger watchdog)
+#   your_charger_heartbeat        — OCPP heartbeat timestamp sensor
+#   your_charger_availability     — OCPP availability switch
+#   your_solar_sensor_1/2         — inverter/meter sensor to monitor
+#   your_stale_sensors            — list of sensors to check for stale data
+#   your_battery_sensors          — list of battery % sensors to alert on
+#   your_battery_threshold        — input_number: alert below this % (e.g. 10)
+###############################################################################
+
+# ── Integration Monitor ───────────────────────────────────────────────────────
+# Monitor key entities from each integration. Alert if unavailable for 10 min.
+# On HA startup, check after 5 min and notify about anything still down.
+
+- id: 'health_integration_monitor'
+  alias: Health - Integration Monitor
+  description: >
+    Monitor key entities from each integration for availability.
+    Catches both unavailable/unknown states and checks on HA startup.
+  triggers:
+  - trigger: state
+    entity_id:
+    - sensor.your_key_entity_integration_1
+    - sensor.your_key_entity_integration_2
+    # Add one representative entity per integration you want to monitor
+    to:
+    for:
+      minutes: 10
+    id: state_change
+  - trigger: homeassistant
+    event: start
+    id: startup
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: trigger
+        id: startup
+      sequence:
+      - delay:
+          minutes: 5
+      - variables:
+          bad_entities: >
+            {% set ns = namespace(bad=[]) %}
+            {% set monitored = [
+              'sensor.your_key_entity_integration_1',
+              'sensor.your_key_entity_integration_2',
+            ] %}
+            {% for e in monitored %}
+              {% if states(e) in ['unavailable', 'unknown'] %}
+                {% set ns.bad = ns.bad + [state_attr(e, 'friendly_name') ~ ' (' ~ states(e) ~ ')'] %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.bad | join(', ') }}
+      - condition: template
+        value_template: "{{ bad_entities | length > 0 }}"
+      - action: notify.your_notify_target
+        data:
+          title: Integrations Down After Restart
+          message: "{{ bad_entities }}"
+          data:
+            push:
+              interruption-level: time-sensitive
+    default:
+    - condition: template
+      value_template: "{{ trigger.to_state.state in ['unavailable', 'unknown'] }}"
+    # Try reload first for known auto-recoverable integrations
+    - choose:
+      - conditions:
+        - condition: template
+          value_template: "{{ trigger.entity_id == 'sensor.your_key_entity_integration_1' }}"
+        sequence:
+        - action: homeassistant.reload_config_entry
+          data:
+            entry_id: '{{ config_entry_id(trigger.entity_id) }}'
+        - delay:
+            seconds: 30
+        - if:
+          - condition: template
+            value_template: "{{ states(trigger.entity_id) in ['unavailable', 'unknown'] }}"
+          then:
+          - action: notify.your_notify_target
+            data:
+              title: Integration Down
+              message: "{{ trigger.to_state.name }} ({{ trigger.entity_id }}) reload failed."
+              data:
+                push:
+                  interruption-level: "{{ 'passive' if is_state('binary_sensor.your_silence_hours', 'on') else 'time-sensitive' }}"
+      default:
+      - action: notify.your_notify_target
+        data:
+          title: Integration Down
+          message: '{{ trigger.to_state.name }} ({{ trigger.entity_id }}) has been {{ trigger.to_state.state }} for 10 minutes.'
+          data:
+            push:
+              interruption-level: "{{ 'passive' if is_state('binary_sensor.your_silence_hours', 'on') else 'time-sensitive' }}"
+  mode: parallel
+  max: 5
+
+
+# ── Stale Sensor Detection ────────────────────────────────────────────────────
+
+- id: 'health_stale_sensor_check'
+  alias: Health - Stale Sensor Detection
+  description: Alert when sensors stop updating despite being available
+  triggers:
+  - trigger: time_pattern
+    hours: /2
+  conditions: []
+  actions:
+  - variables:
+      stale_list: >
+        {% set ns = namespace(stale=[]) %}
+        {% set sensors = [
+          'sensor.your_outdoor_temperature',
+          'sensor.your_indoor_temperature',
+          'sensor.your_outdoor_humidity',
+          'sensor.your_room_illuminance',
+        ] %}
+        {% for s in sensors %}
+          {% if states(s) == 'unknown' %}
+            {% set ns.stale = ns.stale + [states[s].name ~ ' (unknown)'] %}
+          {% elif states(s) not in ['unavailable'] %}
+            {% set last = as_timestamp(states[s].last_updated) %}
+            {% set hours = ((as_timestamp(now()) - last) / 3600) | round(1) %}
+            {% if hours > 2 %}
+              {% set ns.stale = ns.stale + [states[s].name ~ ' (' ~ hours ~ 'h)'] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.stale | join(', ') }}
+  - condition: template
+    value_template: '{{ stale_list | length > 0 }}'
+  - action: notify.your_notify_target
+    data:
+      title: Stale Sensors
+      message: '{{ stale_list }}'
+  mode: single
+
+
+# ── Solar / Inverter Watchdog ─────────────────────────────────────────────────
+# Generic pattern: reload integration on unavailable/unknown, notify if reload fails.
+
+- id: 'health_solar_watchdog'
+  alias: Health - Solar Integration Watchdog
+  description: >
+    Restart solar integration if inverter or power meter becomes unavailable.
+    Uses 30s for: duration to avoid false triggers during transient hiccups.
+    Also checks on HA startup.
+  triggers:
+  - trigger: state
+    entity_id:
+    - sensor.your_solar_sensor_1
+    - sensor.your_solar_sensor_2
+    to: unavailable
+    for:
+      seconds: 30
+    id: state_change
+  - trigger: state
+    entity_id:
+    - sensor.your_solar_sensor_1
+    - sensor.your_solar_sensor_2
+    to: unknown
+    for:
+      seconds: 30
+    id: state_change
+  - trigger: homeassistant
+    event: start
+    id: startup
+  conditions: []
+  actions:
+  - if:
+    - condition: trigger
+      id: startup
+    then:
+    - delay:
+        minutes: 3
+    - condition: template
+      value_template: >
+        {{ states('sensor.your_solar_sensor_1') in ['unavailable', 'unknown']
+           or states('sensor.your_solar_sensor_2') in ['unavailable', 'unknown'] }}
+    else:
+    # state_change trigger: sensor already confirmed bad
+    - condition: template
+      value_template: "{{ trigger.to_state.state in ['unavailable', 'unknown'] }}"
+  # Only reaches here if sensors are confirmed bad — retry every 2 min, up to 30x
+  - repeat:
+      until:
+        - condition: template
+          value_template: >
+            {{ not (states('sensor.your_solar_sensor_1') in ['unavailable', 'unknown']
+               or states('sensor.your_solar_sensor_2') in ['unavailable', 'unknown'])
+               or repeat.index >= 30 }}
+      sequence:
+      - action: homeassistant.reload_config_entry
+        data:
+          entry_id: >
+            {% if trigger.id == 'startup' %}
+              {{ config_entry_id('sensor.your_solar_sensor_1') }}
+            {% else %}
+              {{ config_entry_id(trigger.entity_id) }}
+            {% endif %}
+      - delay:
+          minutes: 2
+  - if:
+    - condition: template
+      value_template: >
+        {{ states('sensor.your_solar_sensor_1') in ['unavailable', 'unknown']
+           or states('sensor.your_solar_sensor_2') in ['unavailable', 'unknown'] }}
+    then:
+    - action: notify.your_notify_target
+      data:
+        title: Solar Integration Down
+        message: >
+          {% if trigger.id == 'startup' %}
+            Solar not recovered after HA restart. Reload failed.
+          {% else %}
+            Watchdog gave up after 30 reload attempts. Still down.
+          {% endif %}
+        data:
+          push:
+            interruption-level: "{{ 'passive' if is_state('binary_sensor.your_silence_hours', 'on') else 'time-sensitive' }}"
+    else:
+    - action: notify.your_notify_target
+      data:
+        title: Solar Integration Auto-Fixed
+        message: >
+          {% if trigger.id == 'startup' %}
+            Solar recovered after startup reload.
+          {% else %}
+            {{ trigger.to_state.name }} was down — reloaded successfully.
+          {% endif %}
+  mode: single
+
+
+# ── OCPP Charger Watchdog ─────────────────────────────────────────────────────
+# Handles both unavailable entities AND stale heartbeats (dead WebSocket where
+# entities still show valid last-known state).
+
+- id: 'health_ocpp_charger_watchdog'
+  alias: Health - OCPP Charger Watchdog
+  description: >
+    Monitor OCPP charger for unavailable entities AND stale heartbeats.
+    Stale heartbeat (>2h, normal interval is 1h) catches dead WebSocket
+    connections where entities still show valid last-known states.
+    Tries integration reload first; notifies to power cycle if that fails.
+  triggers:
+  - trigger: state
+    entity_id:
+    - switch.your_charger_availability
+    - sensor.your_charger_status
+    to: unavailable
+    for:
+      minutes: 2
+    id: state_change
+  - trigger: state
+    entity_id:
+    - switch.your_charger_availability
+    - sensor.your_charger_status
+    to: unknown
+    for:
+      minutes: 2
+    id: state_change
+  - trigger: template
+    value_template: >
+      {% set hb = states('sensor.your_charger_heartbeat') %}
+      {{ hb not in ['unavailable', 'unknown', 'none']
+         and (as_timestamp(now()) - as_timestamp(hb, 0)) > 7200 }}
+    id: stale_heartbeat
+  - trigger: homeassistant
+    event: start
+    id: startup
+  conditions: []
+  actions:
+  - variables:
+      is_stale: >
+        {% set hb = states('sensor.your_charger_heartbeat') %}
+        {{ hb not in ['unavailable', 'unknown', 'none']
+           and (as_timestamp(now()) - as_timestamp(hb, 0)) > 7200 }}
+      is_unavailable: >
+        {{ states('switch.your_charger_availability') in ['unavailable', 'unknown']
+           or states('sensor.your_charger_status') in ['unavailable', 'unknown'] }}
+  - if:
+    - condition: trigger
+      id: startup
+    then:
+    - delay:
+        minutes: 5
+    - condition: template
+      value_template: "{{ is_unavailable or is_stale }}"
+    else:
+    # state_change/stale_heartbeat trigger: sensor already confirmed bad
+    - condition: template
+      value_template: "{{ is_unavailable or is_stale }}"
+  # Only reaches here if charger is confirmed bad — retry every 2 min, up to 30x
+  - repeat:
+      until:
+        - condition: template
+          value_template: >
+            {% set hb = states('sensor.your_charger_heartbeat') %}
+            {% set still_stale = hb not in ['unavailable', 'unknown', 'none']
+               and (as_timestamp(now()) - as_timestamp(hb, 0)) > 7200 %}
+            {% set still_unavailable = states('switch.your_charger_availability') in ['unavailable', 'unknown']
+               or states('sensor.your_charger_status') in ['unavailable', 'unknown'] %}
+            {{ not (still_unavailable or still_stale) or repeat.index >= 30 }}
+      sequence:
+      - action: homeassistant.reload_config_entry
+        data:
+          entry_id: "{{ config_entry_id('switch.your_charger_availability') }}"
+      - delay:
+          minutes: 2
+  - variables:
+      still_stale: >
+        {% set hb = states('sensor.your_charger_heartbeat') %}
+        {{ hb not in ['unavailable', 'unknown', 'none']
+           and (as_timestamp(now()) - as_timestamp(hb, 0)) > 7200 }}
+      still_unavailable: >
+        {{ states('switch.your_charger_availability') in ['unavailable', 'unknown']
+           or states('sensor.your_charger_status') in ['unavailable', 'unknown'] }}
+  - if:
+    - condition: template
+      value_template: "{{ still_unavailable or still_stale }}"
+    then:
+    - action: notify.your_notify_target
+      data:
+        title: OCPP Charger Down
+        message: >
+          {% if trigger.id == 'stale_heartbeat' %}
+            OCPP heartbeat stale (last: {{ states('sensor.your_charger_heartbeat') }}). Gave up after 30 attempts — power cycle the EVSE breaker.
+          {% elif trigger.id == 'startup' %}
+            OCPP not recovered after HA restart. Gave up after 30 attempts — power cycle the EVSE breaker.
+          {% else %}
+            {{ trigger.to_state.name }} is {{ trigger.to_state.state }}. Gave up after 30 attempts — power cycle the EVSE breaker.
+          {% endif %}
+        data:
+          push:
+            interruption-level: "{{ 'passive' if is_state('binary_sensor.your_silence_hours', 'on') else 'critical' }}"
+    else:
+    - action: notify.your_notify_target
+      data:
+        title: OCPP Charger Auto-Fixed
+        message: >
+          {% if trigger.id == 'stale_heartbeat' %}
+            OCPP heartbeat was stale — integration reload fixed it.
+          {% elif trigger.id == 'startup' %}
+            OCPP recovered after startup reload.
+          {% else %}
+            {{ trigger.to_state.name }} was down — reloaded successfully.
+          {% endif %}
+  mode: single
+
+
+# ── Battery Alert ─────────────────────────────────────────────────────────────
+
+- id: 'health_battery_alert'
+  alias: Health - Battery Alert
+  description: Notify when device batteries drop below threshold
+  triggers:
+  - trigger: numeric_state
+    entity_id:
+    - sensor.your_device_1_battery
+    - sensor.your_device_2_battery
+    - sensor.your_device_3_battery
+    # Add all battery sensors you want to monitor
+    below: input_number.your_battery_threshold
+    for:
+      hours: 1
+  conditions: []
+  actions:
+  - action: notify.your_notify_target
+    data:
+      title: Low Battery
+      message: "{{ trigger.to_state.name }}: {{ trigger.to_state.state }}%"
+      data:
+        push:
+          interruption-level: passive
+  mode: parallel
+  max: 10
+
+
+# ── Disk / Memory Alert ───────────────────────────────────────────────────────
+
+- id: 'health_disk_memory_alert'
+  alias: Health - Disk and Memory Alert
+  description: Alert when HA system disk or memory usage is critically high
+  triggers:
+  - trigger: numeric_state
+    entity_id: sensor.system_monitor_disk_usage
+    above: 90
+    for:
+      minutes: 5
+    id: disk_high
+  - trigger: numeric_state
+    entity_id: sensor.system_monitor_memory_usage
+    above: 90
+    for:
+      minutes: 5
+    id: memory_high
+  conditions: []
+  actions:
+  - action: notify.your_notify_target
+    data:
+      title: System Resource Alert
+      message: >
+        {% if trigger.id == 'disk_high' %}
+          Disk usage at {{ states('sensor.system_monitor_disk_usage') }}%
+        {% else %}
+          Memory usage at {{ states('sensor.system_monitor_memory_usage') }}%
+        {% endif %}
+      data:
+        push:
+          interruption-level: time-sensitive
+  mode: parallel
+  max: 2
+
+
+# ── HA Restart Notification ───────────────────────────────────────────────────
+
+- id: 'health_ha_restart_notification'
+  alias: Health - HA Restart Notification
+  description: Notify when Home Assistant restarts
+  triggers:
+  - trigger: homeassistant
+    event: start
+  conditions: []
+  actions:
+  - delay:
+      minutes: 2
+  - action: notify.your_notify_target
+    data:
+      title: Home Assistant
+      message: "HA restarted successfully."
+      data:
+        push:
+          interruption-level: passive
+  mode: single

@@ -1,0 +1,645 @@
+###############################################################################
+# EV Solar Charging Automations
+#
+# Entities to replace with your own:
+#   your_charger_status          — OCPP connector status sensor
+#                                  (values: Available, Charging, SuspendedEVSE,
+#                                   SuspendedEV, Preparing, Finishing)
+#   your_charger_charge_control  — OCPP on/off switch (starts/ends transaction)
+#   your_ev_charge_mode          — input_select: Solar | Fast | Manual | Off
+#   your_ev_charge_min_watts     — input_number: minimum charge watts
+#   your_ev_charge_max_watts     — input_number: maximum charge watts
+#   your_ev_charge_manual_watts  — input_number: manual mode watts
+#   your_ev_charge_ramp_up_watts — input_number: rate adjustment step
+#   your_ev_charge_import_buffer_watts — input_number: hysteresis buffer
+#   your_ev_charge_patience      — input_number: start patience counter
+#   your_ev_charge_pause_patience — input_number: pause patience counter
+#   your_ev_charge_start_confidence — input_number: smoothed start counter
+#   your_ev_charge_pause_confidence — input_number: smoothed pause counter
+#   your_ev_scheduled_charge_active — input_boolean
+#   your_ev_scheduled_charging_pending — binary_sensor from car integration
+#   your_ev_scheduled_charge_time — sensor: ISO datetime of scheduled charge start
+#   your_ev_battery              — sensor: battery % from car integration
+#   your_ev_charge_limit         — number: charge limit % from car integration
+#   your_ev_charging             — sensor: charging state from car integration
+#   your_ev_charge_energy_added  — sensor: energy added this session
+#   your_ev_charge_switch        — switch: car-side charging (optional, continue_on_error)
+#   your_solar_spare_power       — sensor: solar surplus watts (positive = export)
+#   your_solar_spare_power_charging — sensor: 3-min mean of spare power (smoothed)
+#   your_charger_power           — sensor: OCPP metered import watts
+#   your_charger_power_offered   — sensor: OCPP offered watts
+#   your_solar_charger_max_watts — input_number: solar mode display cap
+#   your_notify_target           — notify service (e.g. notify.mobile_app_phone)
+#   your_weather_entity          — weather entity for solar patience adjustment
+#   your_refresh_ev_schedule_shell_command — shell_command to refresh scheduled time
+#   your_ev_poll_entity          — single entity to trigger integration poll
+#
+# Notes:
+#   - ocpp.set_charge_rate is from the OCPP integration (devid = your charger ID)
+#   - Car-side switch (your_ev_charge_switch) is optional — add continue_on_error: true
+#   - Solar mode uses smoothed sensor for start/pause decisions, raw for rate adjustments
+#   - Confidence counters prevent oscillation on partly cloudy days
+###############################################################################
+
+- id: 'energy_solar_charging'
+  alias: Energy - Solar Charging (OCPP)
+  description: >
+    Mode-driven EV charging via OCPP. Off=stop transaction, Solar=feedback-loop
+    from surplus using set_charge_rate watts, Fast=max watts, Manual=user-set watts.
+    Scheduled charge guards (highest priority) keep EVSE at max for car app schedules.
+    Feedback loop runs every 30s for fast ramp-up.
+    Solar mode uses smoothed sensor (3-min mean) + weather-aware patience counters
+    for start/pause/resume to prevent oscillation on partly cloudy days.
+    Rate adjustments still use raw sensor for responsiveness.
+  triggers:
+  - trigger: time_pattern
+    seconds: "/30"
+    id: periodic
+  - trigger: state
+    entity_id: input_select.your_ev_charge_mode
+    id: config_change
+  - trigger: state
+    entity_id: sensor.your_charger_status
+    from: 'Available'
+    id: car_plugged_in
+  - trigger: state
+    entity_id: sensor.your_charger_status
+    to: 'Charging'
+    id: charging_started
+  - trigger: state
+    entity_id: sensor.your_charger_status
+    from: 'Charging'
+    id: charging_stopped
+  conditions:
+  - condition: template
+    value_template: >
+      {{ states('sensor.your_charger_status') not in ['Available', 'unavailable', 'unknown']
+         or trigger.id in ['config_change', 'car_plugged_in'] }}
+  actions:
+  - variables:
+      mode: "{{ states('input_select.your_ev_charge_mode') }}"
+      connector: "{{ states('sensor.your_charger_status') }}"
+      is_charging: "{{ connector == 'Charging' }}"
+      spare: "{{ states('sensor.your_solar_spare_power') | float(0) }}"
+      charger_draw_raw: "{{ states('sensor.your_charger_power') | float(0) * 1000 }}"
+      min_watts: "{{ states('input_number.your_ev_charge_min_watts') | int(4800) }}"
+      max_watts: "{{ states('input_number.your_ev_charge_max_watts') | int(11040) }}"
+      manual_watts: "{{ states('input_number.your_ev_charge_manual_watts') | int(11040) }}"
+      ramp_up: "{{ states('input_number.your_ev_charge_ramp_up_watts') | int(700) }}"
+      import_buffer: "{{ states('input_number.your_ev_charge_import_buffer_watts') | int(600) }}"
+      battery: "{{ states('sensor.your_ev_battery') | float(0) }}"
+      charge_limit: "{{ states('number.your_ev_charge_limit') | float(80) }}"
+      ev_available: >
+        {{ states('sensor.your_ev_battery') not in ['unavailable', 'unknown'] }}
+      sensors_ok: "{{ has_value('sensor.your_solar_spare_power') }}"
+      charge_age: "{{ (as_timestamp(now()) - as_timestamp(states.sensor.your_charger_status.last_changed, 0)) | int(0) }}"
+      ramping_up: "{{ is_charging and charge_age < 90 }}"
+      meter_ok: "{{ not is_charging or charger_draw_raw > 500 }}"
+      charger_draw: "{{ charger_draw_raw if charger_draw_raw > 500 else 0 }}"
+      available_power: "{{ spare + (charger_draw if is_charging else 0) }}"
+      target_watts: "{{ [min_watts, [available_power | int, max_watts] | min] | max }}"
+      enough_power: "{{ available_power >= min_watts }}"
+      should_pause: "{{ meter_ok and not ramping_up and available_power < (min_watts | int - import_buffer | int) }}"
+      should_increase: "{{ spare >= ramp_up | int }}"
+      should_decrease: "{{ meter_ok and not ramping_up and spare < -(import_buffer | int) }}"
+      should_adjust: "{{ should_increase or should_decrease }}"
+      # Smoothed sensor for state transitions (prevents oscillation)
+      spare_smoothed_ok: "{{ has_value('sensor.your_solar_spare_power_charging') }}"
+      spare_smoothed: >
+        {{ states('sensor.your_solar_spare_power_charging') | float(0)
+           if spare_smoothed_ok else spare }}
+      available_power_smoothed: "{{ spare_smoothed + (charger_draw if is_charging else 0) }}"
+      enough_power_smoothed: "{{ available_power_smoothed >= min_watts }}"
+      should_pause_smoothed: >
+        {{ meter_ok and not ramping_up
+           and available_power_smoothed < (min_watts | int - import_buffer | int) }}
+      # Weather-aware patience
+      weather_condition: "{{ states('weather.your_weather_entity') }}"
+      weather_is_sunny: "{{ weather_condition in ['sunny', 'clear-night'] }}"
+      weather_is_variable: "{{ weather_condition in ['partlycloudy', 'windy-variant'] }}"
+      start_patience: >
+        {% set base = states('input_number.your_ev_charge_patience') | int(3) %}
+        {% if weather_is_sunny %}
+          {{ [1, base - 1] | max }}
+        {% elif weather_is_variable %}
+          {{ base }}
+        {% else %}
+          {{ base + 1 }}
+        {% endif %}
+      pause_patience: >
+        {% set base = states('input_number.your_ev_charge_pause_patience') | int(4) %}
+        {% if weather_condition in ['cloudy', 'fog', 'rainy', 'pouring', 'snowy'] %}
+          {{ [1, base - 1] | max }}
+        {% else %}
+          {{ base }}
+        {% endif %}
+      resume_patience: "{{ [1, start_patience | int - 1] | max }}"
+      start_confidence: "{{ states('input_number.your_ev_charge_start_confidence') | int(0) }}"
+      pause_confidence: "{{ states('input_number.your_ev_charge_pause_confidence') | int(0) }}"
+  # Reset confidence counters on mode/cable change
+  - if:
+    - condition: trigger
+      id:
+      - config_change
+      - car_plugged_in
+    then:
+    - action: input_number.set_value
+      target:
+        entity_id: input_number.your_ev_charge_start_confidence
+      data:
+        value: 0
+    - action: input_number.set_value
+      target:
+        entity_id: input_number.your_ev_charge_pause_confidence
+      data:
+        value: 0
+  - choose:
+    # === GUARD 1: Scheduled charge window (±10 min of start time) ===
+    - conditions:
+      - condition: state
+        entity_id: binary_sensor.your_ev_scheduled_charging_pending
+        state: 'on'
+      - condition: template
+        value_template: >
+          {% set start = states('sensor.your_ev_scheduled_charge_time') %}
+          {% if start not in ['none', 'unknown', 'unavailable'] %}
+            {% set mins_until = ((as_timestamp(start, 0) - as_timestamp(now())) / 60) | round(0) %}
+            {{ -5 <= mins_until <= 10 }}
+          {% else %}
+            false
+          {% endif %}
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.your_ev_scheduled_charge_active
+      - action: ocpp.set_charge_rate
+        data:
+          devid: your_charger_id
+          limit_watts: "{{ max_watts }}"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.your_ev_charge_switch
+        continue_on_error: true
+
+    # === GUARD 2: Scheduled charge pending but no usable start time ===
+    - conditions:
+      - condition: state
+        entity_id: binary_sensor.your_ev_scheduled_charging_pending
+        state: 'on'
+      - condition: template
+        value_template: >
+          {% set start = states('sensor.your_ev_scheduled_charge_time') %}
+          {% if start in ['none', 'unknown', 'unavailable'] %}
+            true
+          {% else %}
+            {% set mins_until = ((as_timestamp(start, 0) - as_timestamp(now())) / 60) | round(0) %}
+            {{ mins_until < -60 }}
+          {% endif %}
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.your_ev_scheduled_charge_active
+      - action: ocpp.set_charge_rate
+        data:
+          devid: your_charger_id
+          limit_watts: "{{ max_watts }}"
+      - action: switch.turn_on
+        target:
+          entity_id: switch.your_ev_charge_switch
+        continue_on_error: true
+
+    # === GUARD 3: Active scheduled charge session ===
+    - conditions:
+      - condition: state
+        entity_id: input_boolean.your_ev_scheduled_charge_active
+        state: 'on'
+      sequence:
+      - action: ocpp.set_charge_rate
+        data:
+          devid: your_charger_id
+          limit_watts: "{{ max_watts }}"
+
+    # Off: car-first stop (if available), then end OCPP transaction
+    - conditions:
+      - condition: template
+        value_template: "{{ mode == 'Off' }}"
+      sequence:
+      - if:
+        - condition: template
+          value_template: "{{ is_charging or connector in ['SuspendedEVSE', 'SuspendedEV'] }}"
+        then:
+        - if:
+          - condition: template
+            value_template: "{{ ev_available }}"
+          then:
+          - action: switch.turn_off
+            target:
+              entity_id: switch.your_ev_charge_switch
+            continue_on_error: true
+          - delay: "00:00:10"
+        - action: switch.turn_off
+          target:
+            entity_id: switch.your_charger_charge_control
+        - if:
+          - condition: template
+            value_template: "{{ ev_available }}"
+          then:
+          - delay: "00:00:05"
+          - action: homeassistant.update_entity
+            target:
+              entity_id: &ev_poll_entities
+              - sensor.your_ev_poll_entity
+
+    # Fast: charge at max watts
+    - conditions:
+      - condition: template
+        value_template: "{{ mode == 'Fast' }}"
+      sequence:
+      - action: ocpp.set_charge_rate
+        data:
+          devid: your_charger_id
+          limit_watts: "{{ max_watts }}"
+        continue_on_error: true
+      - if:
+        - condition: template
+          value_template: "{{ not is_charging and connector != 'Charging' }}"
+        then:
+        - action: switch.turn_on
+          target:
+            entity_id: switch.your_charger_charge_control
+          continue_on_error: true
+        - if:
+          - condition: template
+            value_template: "{{ ev_available }}"
+          then:
+          - action: switch.turn_on
+            target:
+              entity_id: switch.your_ev_charge_switch
+            continue_on_error: true
+      # Stop at charge limit
+      - if:
+        - condition: template
+          value_template: "{{ ev_available and battery >= charge_limit and is_charging }}"
+        then:
+        - action: switch.turn_off
+          target:
+            entity_id: switch.your_ev_charge_switch
+          continue_on_error: true
+        - delay: "00:00:10"
+        - if:
+          - condition: template
+            value_template: "{{ states('sensor.your_charger_status') == 'Charging' }}"
+          then:
+          - action: switch.turn_off
+            target:
+              entity_id: switch.your_charger_charge_control
+        - action: homeassistant.update_entity
+          target:
+            entity_id: *ev_poll_entities
+
+    # Manual: set user-configured watts
+    - conditions:
+      - condition: template
+        value_template: "{{ mode == 'Manual' }}"
+      sequence:
+      - action: ocpp.set_charge_rate
+        data:
+          devid: your_charger_id
+          limit_watts: "{{ manual_watts }}"
+        continue_on_error: true
+      - if:
+        - condition: template
+          value_template: "{{ not is_charging and connector != 'Charging' }}"
+        then:
+        - action: switch.turn_on
+          target:
+            entity_id: switch.your_charger_charge_control
+          continue_on_error: true
+        - if:
+          - condition: template
+            value_template: "{{ ev_available }}"
+          then:
+          - action: switch.turn_on
+            target:
+              entity_id: switch.your_ev_charge_switch
+            continue_on_error: true
+
+    # Solar: feedback-loop from surplus
+    - conditions:
+      - condition: template
+        value_template: "{{ mode == 'Solar' }}"
+      sequence:
+      # Update confidence counters when sensors valid and not ramping up
+      - if:
+        - condition: template
+          value_template: "{{ sensors_ok and spare_smoothed_ok and not ramping_up }}"
+        then:
+        - action: input_number.set_value
+          target:
+            entity_id: input_number.your_ev_charge_start_confidence
+          data:
+            value: >
+              {% if enough_power_smoothed and start_confidence < 20 %}
+                {{ start_confidence + 1 }}
+              {% elif not enough_power_smoothed and start_confidence > 0 %}
+                0
+              {% else %}
+                {{ start_confidence }}
+              {% endif %}
+        - action: input_number.set_value
+          target:
+            entity_id: input_number.your_ev_charge_pause_confidence
+          data:
+            value: >
+              {% if should_pause_smoothed and pause_confidence < 20 %}
+                {{ pause_confidence + 1 }}
+              {% elif not should_pause_smoothed and pause_confidence > 0 %}
+                0
+              {% else %}
+                {{ pause_confidence }}
+              {% endif %}
+      - choose:
+        # Sensors unavailable or meter stale: hold current rate
+        - conditions:
+          - condition: template
+            value_template: "{{ not sensors_ok or not spare_smoothed_ok or (is_charging and not meter_ok) }}"
+          sequence: []
+        # Battery at charge limit: stop
+        - conditions:
+          - condition: template
+            value_template: "{{ ev_available and battery >= charge_limit and is_charging }}"
+          sequence:
+          - action: switch.turn_off
+            target:
+              entity_id: switch.your_ev_charge_switch
+            continue_on_error: true
+          - delay: "00:00:10"
+          - if:
+            - condition: template
+              value_template: "{{ states('sensor.your_charger_status') == 'Charging' }}"
+            then:
+            - action: switch.turn_off
+              target:
+                entity_id: switch.your_charger_charge_control
+          - action: homeassistant.update_entity
+            target:
+              entity_id: *ev_poll_entities
+        # Charging + smoothed power below threshold + patience met: pause
+        - conditions:
+          - condition: template
+            value_template: >
+              {{ is_charging and should_pause_smoothed
+                 and (pause_confidence + 1) >= pause_patience }}
+          sequence:
+          - action: ocpp.set_charge_rate
+            data:
+              devid: your_charger_id
+              limit_watts: 0
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.your_ev_charge_start_confidence
+            data:
+              value: 0
+        # Charging + enough power: adjust rate (raw sensor)
+        - conditions:
+          - condition: template
+            value_template: "{{ is_charging and not should_pause_smoothed }}"
+          sequence:
+          - if:
+            - condition: template
+              value_template: "{{ should_adjust }}"
+            then:
+            - action: ocpp.set_charge_rate
+              data:
+                devid: your_charger_id
+                limit_watts: "{{ target_watts }}"
+        # SuspendedEVSE + enough smoothed power + resume patience met: resume
+        - conditions:
+          - condition: template
+            value_template: >
+              {{ connector == 'SuspendedEVSE' and enough_power_smoothed
+                 and (start_confidence + 1) >= resume_patience
+                 and (not ev_available or battery < charge_limit) }}
+          sequence:
+          - action: ocpp.set_charge_rate
+            data:
+              devid: your_charger_id
+              limit_watts: "{{ target_watts }}"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.your_ev_charge_pause_confidence
+            data:
+              value: 0
+        # Not charging + enough smoothed power + start patience met: start
+        - conditions:
+          - condition: template
+            value_template: >
+              {{ not is_charging
+                 and connector not in ['Charging', 'SuspendedEVSE']
+                 and enough_power_smoothed
+                 and (start_confidence + 1) >= start_patience
+                 and (not ev_available or battery < charge_limit) }}
+          sequence:
+          - action: ocpp.set_charge_rate
+            data:
+              devid: your_charger_id
+              limit_watts: "{{ target_watts }}"
+          - action: switch.turn_on
+            target:
+              entity_id: switch.your_charger_charge_control
+            continue_on_error: true
+          - if:
+            - condition: template
+              value_template: "{{ ev_available }}"
+            then:
+            - action: switch.turn_on
+              target:
+                entity_id: switch.your_ev_charge_switch
+              continue_on_error: true
+          - delay: "00:00:05"
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.your_ev_charge_start_confidence
+            data:
+              value: 0
+  mode: single
+
+
+- id: 'energy_scheduled_charge_reset'
+  alias: Energy - Scheduled Charge Auto-Reset
+  description: >
+    Resets your_ev_scheduled_charge_active when the scheduled charge session ends.
+    Triggers on battery full, session ended, cable disconnected, or 30-min timeout.
+  triggers:
+  - trigger: template
+    value_template: >
+      {{ states('sensor.your_ev_battery') | int(0) >=
+         states('number.your_ev_charge_limit') | int(90) }}
+  - trigger: state
+    entity_id: sensor.your_charger_status
+    from: 'Charging'
+    to:
+    - 'Available'
+    - 'Finishing'
+  - trigger: state
+    entity_id: sensor.your_charger_status
+    to: 'Available'
+  - trigger: state
+    entity_id: input_boolean.your_ev_scheduled_charge_active
+    to: 'on'
+    for: "00:30:00"
+    id: timeout
+  conditions:
+  - condition: state
+    entity_id: input_boolean.your_ev_scheduled_charge_active
+    state: 'on'
+  - condition: or
+    conditions:
+    - condition: not
+      conditions:
+      - condition: trigger
+        id: timeout
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id: sensor.your_charger_status
+        state: 'Charging'
+  actions:
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.your_ev_scheduled_charge_active
+  mode: single
+
+
+- id: 'energy_refresh_ev_schedule'
+  alias: Energy - Refresh EV Schedule
+  description: >
+    Event-driven + time-gated refresh of scheduled charging start time.
+    Immediate when scheduled charge becomes pending; every 60 min during day
+    and once overnight when cable connected. Reduces API usage.
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.your_ev_scheduled_charging_pending
+    to: 'on'
+    id: pending_on
+  - trigger: time_pattern
+    minutes: "/60"
+    id: periodic
+  conditions:
+  - condition: or
+    conditions:
+    - condition: trigger
+      id: pending_on
+    - condition: and
+      conditions:
+      - condition: trigger
+        id: periodic
+      - condition: template
+        value_template: "{{ states('sensor.your_charger_status') not in ['Available', 'unavailable', 'unknown'] }}"
+      - condition: template
+        value_template: "{{ 7 <= now().hour or now().hour < 2 }}"
+      - condition: template
+        value_template: >
+          {% set ts = state_attr('sensor.your_ev_scheduled_charge_time', 'raw_timestamp') %}
+          {{ is_state('binary_sensor.your_ev_scheduled_charging_pending', 'on')
+             or (ts is not none and as_timestamp(ts, 0) > now().timestamp()) }}
+    - condition: and
+      conditions:
+      - condition: trigger
+        id: periodic
+      - condition: template
+        value_template: "{{ states('sensor.your_charger_status') not in ['Available', 'unavailable', 'unknown'] }}"
+      - condition: template
+        value_template: "{{ 2 <= now().hour < 7 and now().minute < 5 }}"
+      - condition: template
+        value_template: >
+          {% set ts = state_attr('sensor.your_ev_scheduled_charge_time', 'raw_timestamp') %}
+          {{ is_state('binary_sensor.your_ev_scheduled_charging_pending', 'on')
+             or (ts is not none and as_timestamp(ts, 0) > now().timestamp()) }}
+  actions:
+  - action: shell_command.your_refresh_ev_schedule_shell_command
+  - action: homeassistant.update_entity
+    target:
+      entity_id: sensor.your_ev_scheduled_charge_time
+  mode: single
+
+
+- id: 'energy_ev_overnight_check'
+  alias: Energy - EV Overnight Check
+  description: >
+    Nightly check when in Solar mode. Warns on low battery + poor solar forecast.
+    Optional: could auto-switch to Fast mode for critical low battery cases.
+    Customize the threshold and notification logic to match your routines.
+  triggers:
+  - trigger: time
+    at: '22:00:00'
+  conditions:
+  - condition: template
+    value_template: "{{ states('sensor.your_charger_status') not in ['Available', 'unavailable', 'unknown'] }}"
+  - condition: state
+    entity_id: input_select.your_ev_charge_mode
+    state: 'Solar'
+  actions:
+  - variables:
+      battery: "{{ states('sensor.your_ev_battery') | float(0) }}"
+      forecast: "{{ states('sensor.your_solar_forecast_tomorrow') | float(0) }}"
+      max_watts: "{{ states('input_number.your_ev_charge_max_watts') | int(11040) }}"
+  - choose:
+    # Critical low battery: warn + offer to charge
+    - conditions:
+      - condition: template
+        value_template: "{{ battery < 20 and forecast < 5 }}"
+      sequence:
+      - action: notify.your_notify_target
+        data:
+          title: EV Battery Low
+          message: >
+            Low solar expected tomorrow ({{ forecast | round(1) }} kWh) and
+            EV is at {{ battery | int }}%. Charge overnight?
+          data:
+            actions:
+            - action: EV_CHARGE_NOW
+              title: Charge now
+            - action: EV_WAIT_SOLAR
+              title: Wait for solar
+            push:
+              interruption-level: time-sensitive
+  mode: single
+
+
+- id: 'energy_ev_overnight_response'
+  alias: Energy - EV Overnight Charge Response
+  description: Handle overnight charging notification action
+  triggers:
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: EV_CHARGE_NOW
+  conditions: []
+  actions:
+  - action: input_select.select_option
+    data:
+      option: Fast
+    target:
+      entity_id: input_select.your_ev_charge_mode
+  mode: single
+
+
+- id: 'energy_ev_custom_poll'
+  alias: Energy - EV Custom Poll
+  description: >
+    Time-aware EV entity polling. Day (07:00-23:59): every 15 min.
+    Night (00:00-06:59): every 30 min. Targets a single entity —
+    the integration coordinator refreshes all vehicle sensors from one API call.
+    Disable built-in polling in the integration's System Options to avoid duplicates.
+  triggers:
+  - trigger: time_pattern
+    minutes: "/15"
+  conditions:
+  - condition: template
+    value_template: "{{ now().hour >= 7 or now().minute % 30 == 0 }}"
+  actions:
+  - action: homeassistant.update_entity
+    target:
+      entity_id: sensor.your_ev_poll_entity
+  mode: single

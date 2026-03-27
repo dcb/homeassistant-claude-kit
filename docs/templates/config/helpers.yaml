@@ -1,0 +1,484 @@
+###############################################################################
+# helpers.yaml — All input_* helpers, timers, and counters
+#
+# Included from configuration.yaml via:
+#   homeassistant:
+#     packages:
+#       helpers: !include helpers.yaml
+#
+# OR included directly as top-level keys if your configuration.yaml uses
+# flat includes. Replace all your_* placeholders with meaningful names.
+#
+# IMPORTANT: Never hardcode values that belong here into automations.
+# Always read helpers via states('input_number.your_x') etc.
+#
+# ┌─────────────────────────────────────────────────────────────────┐
+# │ DOMAIN SECTIONS                                                 │
+# │                                                                 │
+# │ Helpers are grouped by automation domain. Delete entire          │
+# │ sections you don't use:                                         │
+# │                                                                 │
+# │ REQUIRED (core)  — activity modes, context, health monitoring   │
+# │ LIGHTING         — timeouts, brightness, transitions, porch     │
+# │ CLIMATE          — zones, temperatures, schedules, preheat, AC  │
+# │ ENERGY/EV        — solar charging, EV modes, polling            │
+# │ APPLIANCE        — dishwasher/washer state machine, reminders   │
+# │                                                                 │
+# │ Within each HA domain type (input_boolean, input_number, etc.), │
+# │ helpers are tagged with their domain in comments.               │
+# └─────────────────────────────────────────────────────────────────┘
+###############################################################################
+
+input_boolean:
+  # ── Activity modes [REQUIRED] ───────────────────────────────────────────────
+  night_mode:
+    name: Night Mode
+    icon: mdi:weather-night
+
+  movie_mode:
+    name: Movie Mode
+    icon: mdi:movie-open
+
+  work_mode:
+    name: Work Mode
+    icon: mdi:desk
+
+  work_mode_auto:
+    name: Work Mode Auto
+    initial: true
+    icon: mdi:desk-lamp
+
+  movie_mode_auto:
+    name: Movie Mode Auto
+    initial: true
+    icon: mdi:movie-open-outline
+
+  away_mode:
+    name: Away Mode
+    icon: mdi:home-export-outline
+
+  # ── Climate zone overrides [CLIMATE] ─────────────────────────────────────────
+  # Add one per zone: your_zone_NAME_override
+  your_zone_living_room_override:
+    name: Living Room Override
+    icon: mdi:thermometer-lines
+
+  your_zone_bedroom_override:
+    name: Bedroom Override
+    icon: mdi:thermometer-lines
+
+  # ── AC manual mode [CLIMATE] ────────────────────────────────────────────────
+  your_living_room_ac_manual:
+    name: Living Room AC Manual Mode
+    icon: mdi:air-conditioner
+
+  your_bedroom_ac_manual:
+    name: Bedroom AC Manual Mode
+    icon: mdi:air-conditioner
+
+  # ── EV charging [ENERGY/EV] ──────────────────────────────────────────────────
+  your_ev_scheduled_charge_active:
+    name: EV Scheduled Charge Active
+    icon: mdi:calendar-check
+
+  # ── Appliance [APPLIANCE] ────────────────────────────────────────────────────
+  your_solar_reminded_today:
+    name: Appliance Solar Reminded Today
+    icon: mdi:solar-power
+
+
+input_select:
+  # ── Climate mode [CLIMATE] ──────────────────────────────────────────────────
+  your_climate_mode:
+    name: Climate Mode
+    options:
+      - Winter
+      - Winter-Eco
+      - Spring-Autumn
+      - Summer
+      - Off
+    initial: Off
+    icon: mdi:home-thermometer-outline
+
+  # ── Preheat state [CLIMATE] ─────────────────────────────────────────────────
+  your_preheat_mode:
+    name: Preheat Mode
+    options:
+      - idle
+      - schedule
+      - away_return
+    initial: idle
+    icon: mdi:sun-clock
+
+  # ── EV charge mode [ENERGY/EV] ──────────────────────────────────────────────
+  your_ev_charge_mode:
+    name: EV Charge Mode
+    options:
+      - Solar
+      - Fast
+      - Manual
+      - Off
+    initial: Off
+    icon: mdi:ev-station
+
+  # ── Solar priority [ENERGY/EV] ──────────────────────────────────────────────
+  your_solar_priority:
+    name: Solar Priority
+    options:
+      - Balanced
+      - Charge First
+      - Heat First
+    initial: Balanced
+    icon: mdi:solar-power-variant
+
+  # ── Appliance state [APPLIANCE] ──────────────────────────────────────────────
+  # Persists independently of WiFi appliance sensors going unavailable
+  your_appliance_state:
+    name: Appliance State
+    options:
+      - dirty
+      - running
+      - clean
+    initial: dirty
+    icon: mdi:dishwasher
+
+
+input_number:
+  # ── Lighting timeouts (seconds) [LIGHTING] ──────────────────────────────────
+  timeout_motion_normal:
+    name: Motion Timeout Normal
+    min: 10
+    max: 600
+    step: 5
+    initial: 120
+    unit_of_measurement: s
+    icon: mdi:timer-outline
+
+  timeout_motion_night:
+    name: Motion Timeout Night
+    min: 5
+    max: 120
+    step: 5
+    initial: 30
+    unit_of_measurement: s
+    icon: mdi:timer-outline
+
+  timeout_motion_movie:
+    name: Motion Timeout Movie
+    min: 5
+    max: 120
+    step: 5
+    initial: 15
+    unit_of_measurement: s
+    icon: mdi:timer-outline
+
+  timeout_motion_normal_long:
+    name: Motion Timeout Long
+    min: 30
+    max: 600
+    step: 10
+    initial: 180
+    unit_of_measurement: s
+    icon: mdi:timer-outline
+
+  # ── Lighting transitions (seconds) [LIGHTING] ───────────────────────────────
+  transition_on:
+    name: Light Transition On
+    min: 0
+    max: 10
+    step: 0.5
+    initial: 1
+    unit_of_measurement: s
+    icon: mdi:transition
+
+  transition_off:
+    name: Light Transition Off
+    min: 0
+    max: 30
+    step: 0.5
+    initial: 3
+    unit_of_measurement: s
+    icon: mdi:transition
+
+  # ── Lighting brightness [LIGHTING] ───────────────────────────────────────────
+  brightness_movie:
+    name: Movie Mode Brightness
+    min: 1
+    max: 100
+    step: 1
+    initial: 15
+    unit_of_measurement: "%"
+    icon: mdi:brightness-percent
+
+  # ── Luminance thresholds [LIGHTING] ──────────────────────────────────────────
+  luminance_threshold_room:
+    name: Luminance Threshold (room)
+    min: 0
+    max: 1000
+    step: 10
+    initial: 100
+    unit_of_measurement: lx
+    icon: mdi:brightness-5
+
+  # ── Porch lights [LIGHTING] ──────────────────────────────────────────────────
+  porch_lights_elevation_on:
+    name: Porch Lights Sun Elevation On
+    min: -18
+    max: 5
+    step: 0.5
+    initial: -3
+    unit_of_measurement: "°"
+    icon: mdi:weather-sunset
+
+  # ── Work mode [LIGHTING] ─────────────────────────────────────────────────────
+  your_work_color_temp:
+    name: Work Mode Color Temp
+    min: 2700
+    max: 6500
+    step: 100
+    initial: 4000
+    unit_of_measurement: K
+    icon: mdi:temperature-kelvin
+
+  # ── Climate temperatures [CLIMATE] ───────────────────────────────────────────
+  your_target_temperature:
+    name: Target Temperature
+    min: 5
+    max: 30
+    step: 0.5
+    initial: 21
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+
+  your_target_temperature_day:
+    name: Day Temperature
+    min: 5
+    max: 30
+    step: 0.5
+    initial: 21
+    unit_of_measurement: "°C"
+    icon: mdi:weather-sunny
+
+  your_target_temperature_night:
+    name: Night Temperature
+    min: 5
+    max: 30
+    step: 0.5
+    initial: 18
+    unit_of_measurement: "°C"
+    icon: mdi:weather-night
+
+  # Add one per zone: your_zone_NAME_target
+  your_zone_living_room_target:
+    name: Living Room Target Temperature
+    min: 5
+    max: 30
+    step: 0.5
+    initial: 21
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+
+  your_zone_bedroom_target:
+    name: Bedroom Target Temperature
+    min: 5
+    max: 30
+    step: 0.5
+    initial: 21
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer
+
+  your_hysteresis_heat_on:
+    name: Heating Hysteresis On
+    min: 0
+    max: 2
+    step: 0.1
+    initial: 0.5
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer-chevron-up
+
+  your_hysteresis_heat_off:
+    name: Heating Hysteresis Off
+    min: 0
+    max: 2
+    step: 0.1
+    initial: 0.3
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer-chevron-down
+
+  your_boiler_min_cycle_minutes:
+    name: Boiler Min Cycle Minutes
+    min: 1
+    max: 30
+    step: 1
+    initial: 5
+    unit_of_measurement: min
+    icon: mdi:timer
+
+  your_preheat_max_duration:
+    name: Preheat Max Duration
+    min: 15
+    max: 180
+    step: 15
+    initial: 60
+    unit_of_measurement: min
+    icon: mdi:timer
+
+  # ── AC solar heating [CLIMATE] ───────────────────────────────────────────────
+  your_ac_manual_mode_duration:
+    name: AC Manual Mode Duration
+    min: 1
+    max: 24
+    step: 1
+    initial: 6
+    unit_of_measurement: h
+    icon: mdi:timer
+
+  # ── EV charging [ENERGY/EV] ───────────────────────────────────────────────────
+  your_ev_charge_min_watts:
+    name: EV Min Charge Watts
+    min: 1380
+    max: 11040
+    step: 100
+    initial: 4800
+    unit_of_measurement: W
+    icon: mdi:flash
+
+  your_ev_charge_max_watts:
+    name: EV Max Charge Watts
+    min: 1380
+    max: 22080
+    step: 100
+    initial: 11040
+    unit_of_measurement: W
+    icon: mdi:flash
+
+  your_ev_charge_manual_watts:
+    name: EV Manual Charge Watts
+    min: 1380
+    max: 22080
+    step: 100
+    initial: 11040
+    unit_of_measurement: W
+    icon: mdi:flash
+
+  your_ev_charge_ramp_up_watts:
+    name: EV Charge Ramp Up Step
+    min: 100
+    max: 2000
+    step: 100
+    initial: 700
+    unit_of_measurement: W
+    icon: mdi:chevron-up
+
+  your_ev_charge_import_buffer_watts:
+    name: EV Charge Import Buffer
+    min: 0
+    max: 2000
+    step: 100
+    initial: 600
+    unit_of_measurement: W
+    icon: mdi:buffer
+
+  your_ev_charge_patience:
+    name: EV Start Patience
+    min: 1
+    max: 10
+    step: 1
+    initial: 3
+    unit_of_measurement: ticks
+    icon: mdi:timer-sand
+
+  your_ev_charge_pause_patience:
+    name: EV Pause Patience
+    min: 1
+    max: 10
+    step: 1
+    initial: 4
+    unit_of_measurement: ticks
+    icon: mdi:timer-sand
+
+  your_ev_charge_start_confidence:
+    name: EV Start Confidence
+    min: 0
+    max: 20
+    step: 1
+    initial: 0
+    icon: mdi:counter
+
+  your_ev_charge_pause_confidence:
+    name: EV Pause Confidence
+    min: 0
+    max: 20
+    step: 1
+    initial: 0
+    icon: mdi:counter
+
+  # ── Health monitoring [REQUIRED] ─────────────────────────────────────────────
+  your_battery_threshold:
+    name: Battery Alert Threshold
+    min: 5
+    max: 30
+    step: 1
+    initial: 10
+    unit_of_measurement: "%"
+    icon: mdi:battery-alert
+
+
+input_datetime:
+  # ── Climate schedules [CLIMATE] ──────────────────────────────────────────────
+  your_morning_work_day:
+    name: Morning (Work Day)
+    has_time: true
+    has_date: false
+    initial: "07:00:00"
+
+  your_morning_weekend:
+    name: Morning (Weekend)
+    has_time: true
+    has_date: false
+    initial: "09:00:00"
+
+  your_night_time_work_day:
+    name: Night Time (Work Day)
+    has_time: true
+    has_date: false
+    initial: "22:30:00"
+
+  your_night_time_weekend:
+    name: Night Time (Weekend)
+    has_time: true
+    has_date: false
+    initial: "23:30:00"
+
+  your_last_boiler_command:
+    name: Last Boiler Command
+    has_time: true
+    has_date: true
+
+
+timer:
+  # ── AC manual mode timers [CLIMATE] ──────────────────────────────────────────
+  your_living_room_ac_timer:
+    name: Living Room AC Manual Mode Timer
+
+  your_bedroom_ac_timer:
+    name: Bedroom AC Manual Mode Timer
+
+  # ── Climate [CLIMATE] ────────────────────────────────────────────────────────
+  your_preheat_timeout_timer:
+    name: Preheat Safety Timeout
+
+  # ── TV sleep timers [REQUIRED] ───────────────────────────────────────────────
+  your_tv_sleep_timer_bedroom:
+    name: TV Sleep Timer Bedroom
+
+  your_tv_sleep_timer_living_room:
+    name: TV Sleep Timer Living Room
+
+
+counter:
+  your_appliance_cycles_counter:
+    name: Appliance Cycles
+    initial: 0
+    step: 1
+    icon: mdi:counter

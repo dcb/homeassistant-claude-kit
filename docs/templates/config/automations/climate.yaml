@@ -1,0 +1,444 @@
+###############################################################################
+# Climate Automations — Zone Schedule + TRV + Preheat
+#
+# Patterns demonstrated:
+#   1. Event-driven TRV: triggers on temperature/target changes, not polling
+#   2. Targeted zone updates: only update zones affected by the trigger
+#   3. Day/night schedule: morning/night triggers keyed to day type
+#   4. Adaptive preheat: per-zone temperature boost before scheduled transition
+#      or on away-return, with safety timeout
+#
+# Zone model:
+#   Each zone has: a temperature sensor (smoothed), a target input_number,
+#   an override boolean, and a TRV entity. The script update_zone_climate
+#   computes the offset and calls climate.set_temperature on the TRV.
+#
+# See scripts/climate.yaml for: update_zone_climate, evaluate_central_heating,
+# set_target_temperature_day, set_night_target_temperature, sync_all_zones_to_target
+#
+# Entities to replace:
+#   your_climate_mode            — input_select: Winter | Winter-Eco | Spring-Autumn | Summer | Off
+#   your_away_mode               — input_boolean
+#   your_preheat_mode            — input_select: idle | schedule | away_return
+#   your_zone_*_temp_smoothed    — sensor: smoothed temperature (e.g. 3-min mean)
+#   your_zone_*_target           — input_number: zone setpoint
+#   your_zone_*_override         — input_boolean: per-zone manual override
+#   your_target_temperature      — input_number: global base setpoint
+#   your_morning_*               — input_datetime: morning schedule times
+#   your_night_time_*            — input_datetime: night schedule times
+#   your_today_workday            — binary_sensor.workday_sensor
+#   your_preheat_timeout_timer   — timer
+#   your_preheat_max_duration    — input_number: max preheat minutes
+###############################################################################
+
+# ── Event-Driven TRV Control ──────────────────────────────────────────────────
+
+- id: 'climate_react_temperature'
+  alias: Climate - React to Temperature Changes
+  description: Event-driven TRV offset and target updates (replaces polling)
+  triggers:
+  - trigger: state
+    entity_id:
+    - sensor.your_zone_living_room_temp_smoothed
+    - sensor.your_zone_bedroom_temp_smoothed
+    - sensor.your_zone_extra_room_temp_smoothed
+  - trigger: state
+    entity_id:
+    - input_number.your_target_temperature
+    - input_number.your_zone_living_room_target
+    - input_number.your_zone_bedroom_target
+    - input_number.your_zone_extra_room_target
+  - trigger: state
+    entity_id:
+    - input_boolean.your_zone_living_room_override
+    - input_boolean.your_zone_bedroom_override
+    - input_boolean.your_zone_extra_room_override
+  conditions:
+  - condition: template
+    value_template: "{{ states('input_select.your_climate_mode') in ['Winter', 'Winter-Eco'] }}"
+  - condition: state
+    entity_id: input_boolean.your_away_mode
+    state: 'off'
+  actions:
+  - variables:
+      triggered_entity: "{{ trigger.entity_id }}"
+      zones_to_update: >
+        {% set ns = namespace(zones=[]) %}
+        {% if triggered_entity in [
+          'sensor.your_zone_living_room_temp_smoothed',
+          'input_number.your_zone_living_room_target',
+          'input_boolean.your_zone_living_room_override'
+        ] %}
+          {% set ns.zones = ns.zones + ['living_room'] %}
+        {% endif %}
+        {% if triggered_entity in [
+          'sensor.your_zone_bedroom_temp_smoothed',
+          'input_number.your_zone_bedroom_target',
+          'input_boolean.your_zone_bedroom_override'
+        ] %}
+          {% set ns.zones = ns.zones + ['bedroom'] %}
+        {% endif %}
+        {% if triggered_entity in [
+          'sensor.your_zone_extra_room_temp_smoothed',
+          'input_number.your_zone_extra_room_target',
+          'input_boolean.your_zone_extra_room_override'
+        ] %}
+          {% set ns.zones = ns.zones + ['extra_room'] %}
+        {% endif %}
+        {% if triggered_entity == 'input_number.your_target_temperature' %}
+          {% set ns.zones = ['living_room', 'bedroom', 'extra_room'] %}
+        {% endif %}
+        {{ ns.zones }}
+  - repeat:
+      for_each: "{{ zones_to_update }}"
+      sequence:
+      - action: script.update_zone_climate
+        data:
+          zone_id: "{{ repeat.item }}"
+  - action: script.evaluate_central_heating
+    data: {}
+  mode: queued
+  max: 5
+
+
+# ── Day / Night Schedule ──────────────────────────────────────────────────────
+
+- id: 'climate_schedule_day_night'
+  alias: Climate Schedule - Day/Night
+  description: Set day/night target temperatures on schedule, sync all zones
+  triggers:
+  - trigger: time
+    at: input_datetime.your_morning_weekend
+    id: morning_weekend
+  - trigger: time
+    at: input_datetime.your_morning_work_day
+    id: morning_workday
+  - trigger: time
+    at: input_datetime.your_night_time_weekend
+    id: night_weekend
+  - trigger: time
+    at: input_datetime.your_night_time_work_day
+    id: night_workday
+  conditions:
+  - condition: state
+    entity_id: input_select.your_climate_mode
+    state: Winter
+  - condition: state
+    entity_id: input_boolean.your_away_mode
+    state: 'off'
+  actions:
+  - variables:
+      is_morning: "{{ trigger.id.startswith('morning') }}"
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: "{{ is_morning }}"
+      sequence:
+      - choose:
+        - conditions:
+          - condition: trigger
+            id: morning_weekend
+          - condition: state
+            entity_id: binary_sensor.your_today_workday
+            state: 'off'
+          sequence:
+          - action: script.set_target_temperature_day
+            data: {}
+        - conditions:
+          - condition: trigger
+            id: morning_workday
+          - condition: state
+            entity_id: binary_sensor.your_today_workday
+            state: 'on'
+          sequence:
+          - action: script.set_target_temperature_day
+            data: {}
+    - conditions:
+      - condition: template
+        value_template: "{{ not is_morning }}"
+      sequence:
+      - choose:
+        - conditions:
+          - condition: trigger
+            id: night_weekend
+          - condition: template
+            value_template: >
+              {{ is_state('binary_sensor.your_today_workday', 'off')
+                 or is_state('binary_sensor.your_tomorrow_workday', 'off') }}
+          sequence:
+          - action: script.set_night_target_temperature
+            data: {}
+        - conditions:
+          - condition: trigger
+            id: night_workday
+          - condition: state
+            entity_id: binary_sensor.your_tomorrow_workday
+            state: 'on'
+          sequence:
+          - action: script.set_night_target_temperature
+            data: {}
+  # Runs for all branches — every schedule change needs zone sync
+  - action: script.sync_all_zones_to_target
+    data: {}
+  - action: script.update_zone_climate
+    data:
+      zone_id: living_room
+  - action: script.update_zone_climate
+    data:
+      zone_id: bedroom
+  - action: script.update_zone_climate
+    data:
+      zone_id: extra_room
+  - action: script.evaluate_central_heating
+    data: {}
+  mode: single
+
+
+# ── Adaptive Pre-Heat ─────────────────────────────────────────────────────────
+
+- id: 'climate_adaptive_preheat'
+  alias: Climate - Adaptive Pre-Heat
+  description: >
+    Per-zone pre-heating before scheduled transitions and on away-return.
+    Sets preheat_mode (idle | schedule | away_return) which injects boosted
+    targets via effective_target template sensors and boosts flow temperature.
+    Safety timeout prevents getting stuck in preheat indefinitely.
+  triggers:
+  - trigger: time_pattern
+    minutes: "/5"
+    id: periodic
+  - trigger: state
+    entity_id:
+    - sensor.your_zone_living_room_temp_smoothed
+    - sensor.your_zone_bedroom_temp_smoothed
+    id: temp_change
+  - trigger: state
+    entity_id: input_boolean.your_away_mode
+    to: 'off'
+    id: away_off
+  - trigger: state
+    entity_id: input_select.your_climate_mode
+    id: mode_change
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.your_preheat_timeout_timer
+    id: safety_timeout
+  - trigger: homeassistant
+    event: start
+    id: startup
+  conditions: []
+  actions:
+  - if:
+    - condition: trigger
+      id: startup
+    then:
+    - delay:
+        minutes: 3
+  - variables:
+      climate_mode: "{{ states('input_select.your_climate_mode') }}"
+      away: "{{ is_state('input_boolean.your_away_mode', 'on') }}"
+      preheat: "{{ states('input_select.your_preheat_mode') }}"
+      max_duration: "{{ states('input_number.your_preheat_max_duration') | int(120) }}"
+  - choose:
+    # Safety timeout: force idle
+    - conditions:
+      - condition: trigger
+        id: safety_timeout
+      sequence:
+      - action: input_select.select_option
+        data:
+          option: idle
+        target:
+          entity_id: input_select.your_preheat_mode
+      - action: logbook.log
+        data:
+          name: Preheat
+          message: "Safety timeout reached — deactivating"
+          entity_id: input_select.your_preheat_mode
+      - action: script.update_zone_climate
+        data:
+          zone_id: living_room
+      - action: script.update_zone_climate
+        data:
+          zone_id: bedroom
+      - action: script.evaluate_central_heating
+        data: {}
+
+    # Mode change to non-heating: deactivate preheat
+    - conditions:
+      - condition: trigger
+        id: mode_change
+      - condition: template
+        value_template: "{{ climate_mode not in ['Winter', 'Winter-Eco'] }}"
+      sequence:
+      - action: input_select.select_option
+        data:
+          option: idle
+        target:
+          entity_id: input_select.your_preheat_mode
+      - action: timer.cancel
+        target:
+          entity_id: timer.your_preheat_timeout_timer
+      - action: script.update_zone_climate
+        data:
+          zone_id: living_room
+      - action: script.update_zone_climate
+        data:
+          zone_id: bedroom
+      - action: script.evaluate_central_heating
+        data: {}
+
+    # Away mode ended: start away_return preheat
+    - conditions:
+      - condition: trigger
+        id: away_off
+      - condition: template
+        value_template: "{{ climate_mode in ['Winter', 'Winter-Eco'] }}"
+      - condition: template
+        value_template: "{{ preheat == 'idle' }}"
+      sequence:
+      - action: input_select.select_option
+        data:
+          option: away_return
+        target:
+          entity_id: input_select.your_preheat_mode
+      - action: timer.start
+        data:
+          duration: "{{ '{:02d}:{:02d}:00'.format(max_duration // 60, max_duration % 60) }}"
+        target:
+          entity_id: timer.your_preheat_timeout_timer
+      - action: script.update_zone_climate
+        data:
+          zone_id: living_room
+      - action: script.update_zone_climate
+        data:
+          zone_id: bedroom
+      - action: script.evaluate_central_heating
+        data: {}
+
+    # Active preheat: check if zones reached target + stop if all warm
+    - conditions:
+      - condition: template
+        value_template: "{{ preheat != 'idle' and climate_mode in ['Winter', 'Winter-Eco'] and not away }}"
+      sequence:
+      - variables:
+          lr_temp: "{{ states('sensor.your_zone_living_room_temp_smoothed') | float(0) }}"
+          lr_target: "{{ states('input_number.your_zone_living_room_target') | float(21) }}"
+          br_temp: "{{ states('sensor.your_zone_bedroom_temp_smoothed') | float(0) }}"
+          br_target: "{{ states('input_number.your_zone_bedroom_target') | float(21) }}"
+          all_warm: "{{ lr_temp >= lr_target - 0.5 and br_temp >= br_target - 0.5 }}"
+      - if:
+        - condition: template
+          value_template: "{{ all_warm }}"
+        then:
+        - action: input_select.select_option
+          data:
+            option: idle
+          target:
+            entity_id: input_select.your_preheat_mode
+        - action: timer.cancel
+          target:
+            entity_id: timer.your_preheat_timeout_timer
+        - action: script.update_zone_climate
+          data:
+            zone_id: living_room
+        - action: script.update_zone_climate
+          data:
+            zone_id: bedroom
+        - action: script.evaluate_central_heating
+          data: {}
+
+    # Periodic: check if schedule preheat should start
+    - conditions:
+      - condition: trigger
+        id: periodic
+      - condition: template
+        value_template: "{{ preheat == 'idle' and climate_mode in ['Winter', 'Winter-Eco'] and not away }}"
+      sequence:
+      - variables:
+          # Time until next morning schedule trigger (minutes)
+          morning_weekend: "{{ as_timestamp(today_at(states('input_datetime.your_morning_weekend')[:5])) }}"
+          morning_workday: "{{ as_timestamp(today_at(states('input_datetime.your_morning_work_day')[:5])) }}"
+          is_workday: "{{ is_state('binary_sensor.your_today_workday', 'on') }}"
+          next_morning: "{{ morning_workday if is_workday else morning_weekend }}"
+          mins_until: "{{ ((next_morning - as_timestamp(now())) / 60) | round(0) }}"
+          lead: "{{ states('input_number.your_preheat_max_duration') | int(60) }}"
+      - if:
+        - condition: template
+          value_template: "{{ 0 < mins_until <= lead }}"
+        then:
+        - condition: template
+          value_template: "{{ lead | int(0) > 0 }}"
+        - action: input_select.select_option
+          data:
+            option: schedule
+          target:
+            entity_id: input_select.your_preheat_mode
+        - action: timer.start
+          data:
+            duration: "{{ '{:02d}:{:02d}:00'.format(lead // 60, lead % 60) }}"
+          target:
+            entity_id: timer.your_preheat_timeout_timer
+        - action: script.update_zone_climate
+          data:
+            zone_id: living_room
+        - action: script.update_zone_climate
+          data:
+            zone_id: bedroom
+        - action: script.evaluate_central_heating
+          data: {}
+  mode: queued
+  max: 5
+
+
+# ── Away Mode: TRV Setback ────────────────────────────────────────────────────
+
+- id: 'climate_away_mode_setback'
+  alias: Climate - Away Mode TRV Setback
+  description: Set TRVs to frost-protection temperature when away mode activates
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_away_mode
+    to: 'on'
+  conditions:
+  - condition: template
+    value_template: "{{ states('input_select.your_climate_mode') in ['Winter', 'Winter-Eco'] }}"
+  actions:
+  - action: script.update_zone_climate
+    data:
+      zone_id: living_room
+  - action: script.update_zone_climate
+    data:
+      zone_id: bedroom
+  - action: script.update_zone_climate
+    data:
+      zone_id: extra_room
+  - action: script.evaluate_central_heating
+    data: {}
+  mode: single
+
+
+# ── Climate Mode Change ───────────────────────────────────────────────────────
+
+- id: 'climate_mode_change'
+  alias: Climate - Mode Change Handler
+  description: Re-evaluate all zones and central heating when climate mode changes
+  triggers:
+  - trigger: state
+    entity_id: input_select.your_climate_mode
+  conditions: []
+  actions:
+  - action: script.update_zone_climate
+    data:
+      zone_id: living_room
+  - action: script.update_zone_climate
+    data:
+      zone_id: bedroom
+  - action: script.update_zone_climate
+    data:
+      zone_id: extra_room
+  - action: script.evaluate_central_heating
+    data: {}
+  mode: queued
+  max: 3

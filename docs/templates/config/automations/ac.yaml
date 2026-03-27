@@ -1,0 +1,336 @@
+###############################################################################
+# AC Solar Heating Automations
+#
+# Controls heat-pump ACs from solar surplus via a "solar_ac_allocation" sensor.
+# The allocation sensor (template or external) emits: allowed | should_stop | (other)
+# A separate manual mode per AC lets users override solar control for a
+# configurable duration, then auto-reverts.
+#
+# Entities to replace with your own:
+#   your_solar_ac_allocation     — sensor: 'allowed' | 'should_stop' | other
+#                                  (typically a template sensor based on solar spare)
+#   your_climate_mode            — input_select: climate operating mode
+#                                  (automations here run in 'Winter' | 'Spring-Autumn')
+#   your_away_mode               — input_boolean: suppress all AC control
+#   your_solar_priority          — input_select: 'Charge First' suppresses AC
+#   your_living_room_ac          — climate entity
+#   your_bedroom_ac              — climate entity (optional; remove if only one AC)
+#   your_living_room_ac_manual   — input_boolean: manual override flag
+#   your_bedroom_ac_manual       — input_boolean: manual override flag
+#   your_living_room_ac_timer    — timer: manual mode duration
+#   your_bedroom_ac_timer        — timer: manual mode duration
+#   your_bedroom_silence_hours   — binary_sensor: quiet hours (suppress bedroom AC start)
+#   your_target_temperature      — input_number: base heating setpoint
+#   your_ac_manual_mode_duration — input_number: hours for manual mode timeout
+#   your_notify_target           — notify service
+#
+# Solar allocation sensor example (add to configuration.yaml):
+#   template:
+#     - sensor:
+#         - name: solar_ac_allocation
+#           state: >
+#             {% set spare = states('sensor.your_solar_spare_power') | float(0) %}
+#             {% set ac_draw = 1200 %}  # approximate watts per AC unit
+#             {% if spare > ac_draw + 300 %}
+#               allowed
+#             {% elif spare < 0 %}
+#               should_stop
+#             {% else %}
+#               marginal
+#             {% endif %}
+#
+# Anti-cycling: ACs only start if they haven't changed state in 10 minutes.
+###############################################################################
+
+- id: 'climate_ac_solar_heating'
+  alias: Climate - AC Solar Heating
+  description: Control ACs based on solar spare power (skips ACs in manual mode)
+  triggers:
+  - trigger: state
+    entity_id: sensor.your_solar_ac_allocation
+    id: allocation_change
+  - trigger: state
+    entity_id: input_select.your_climate_mode
+    id: mode_change
+  - trigger: state
+    entity_id: input_boolean.your_away_mode
+    to: 'on'
+    id: away_on
+  - trigger: state
+    entity_id: binary_sensor.your_bedroom_silence_hours
+    to: 'on'
+    id: silence_start
+  - trigger: time_pattern
+    minutes: "/5"
+    id: periodic
+  - trigger: state
+    entity_id: input_boolean.your_living_room_ac_manual
+    to: 'off'
+    id: lr_manual_off
+  - trigger: state
+    entity_id: input_boolean.your_bedroom_ac_manual
+    to: 'off'
+    id: br_manual_off
+  conditions: []
+  actions:
+  - variables:
+      climate_mode: "{{ states('input_select.your_climate_mode') }}"
+      away: "{{ is_state('input_boolean.your_away_mode', 'on') }}"
+      allocation: "{{ states('sensor.your_solar_ac_allocation') }}"
+      lr_manual: "{{ is_state('input_boolean.your_living_room_ac_manual', 'on') }}"
+      br_manual: "{{ is_state('input_boolean.your_bedroom_ac_manual', 'on') }}"
+      lr_on: "{{ states('climate.your_living_room_ac') != 'off' }}"
+      br_on: "{{ states('climate.your_bedroom_ac') != 'off' }}"
+      bedroom_silence: "{{ is_state('binary_sensor.your_bedroom_silence_hours', 'on') }}"
+      target: "{{ states('input_number.your_target_temperature') | float(20) + 1 }}"
+      solar_priority: "{{ states('input_select.your_solar_priority') }}"
+  - choose:
+    # Shutdown: Off mode or away mode (safety override, ignores manual mode)
+    - conditions:
+      - condition: template
+        value_template: "{{ climate_mode == 'Off' or away }}"
+      sequence:
+      - if:
+        - condition: template
+          value_template: "{{ lr_on }}"
+        then:
+        - action: climate.turn_off
+          target:
+            entity_id: climate.your_living_room_ac
+      - if:
+        - condition: template
+          value_template: "{{ br_on }}"
+        then:
+        - action: climate.turn_off
+          target:
+            entity_id: climate.your_bedroom_ac
+
+    # Manual mode ended: apply correct solar-driven state immediately
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.id in ['lr_manual_off', 'br_manual_off'] and climate_mode in ['Winter', 'Spring-Autumn'] and not away }}"
+      sequence:
+      - if:
+        - condition: template
+          value_template: "{{ trigger.id == 'lr_manual_off' }}"
+        then:
+        - if:
+          - condition: template
+            value_template: "{{ allocation == 'allowed' and solar_priority != 'Charge First' }}"
+          then:
+          - action: climate.set_hvac_mode
+            data:
+              hvac_mode: heat
+            target:
+              entity_id: climate.your_living_room_ac
+          - action: climate.set_temperature
+            data:
+              temperature: "{{ target }}"
+            target:
+              entity_id: climate.your_living_room_ac
+          else:
+          - action: climate.turn_off
+            target:
+              entity_id: climate.your_living_room_ac
+      - if:
+        - condition: template
+          value_template: "{{ trigger.id == 'br_manual_off' }}"
+        then:
+        - if:
+          - condition: template
+            value_template: "{{ allocation == 'allowed' and solar_priority != 'Charge First' and not bedroom_silence }}"
+          then:
+          - action: climate.set_hvac_mode
+            data:
+              hvac_mode: heat
+            target:
+              entity_id: climate.your_bedroom_ac
+          - action: climate.set_temperature
+            data:
+              temperature: "{{ target }}"
+            target:
+              entity_id: climate.your_bedroom_ac
+          else:
+          - action: climate.turn_off
+            target:
+              entity_id: climate.your_bedroom_ac
+
+    # Solar should_stop: turn off non-manual ACs
+    - conditions:
+      - condition: template
+        value_template: "{{ climate_mode in ['Winter', 'Spring-Autumn'] and allocation == 'should_stop' }}"
+      sequence:
+      - if:
+        - condition: template
+          value_template: "{{ lr_on and not lr_manual }}"
+        then:
+        - action: climate.turn_off
+          target:
+            entity_id: climate.your_living_room_ac
+      - if:
+        - condition: template
+          value_template: "{{ br_on and not br_manual }}"
+        then:
+        - action: climate.turn_off
+          target:
+            entity_id: climate.your_bedroom_ac
+
+    # Solar allowed: start non-manual ACs with anti-cycling check (10 min)
+    - conditions:
+      - condition: template
+        value_template: "{{ climate_mode in ['Winter', 'Spring-Autumn'] and allocation == 'allowed' and solar_priority != 'Charge First' }}"
+      sequence:
+      - if:
+        - condition: template
+          value_template: >
+            {{ not lr_manual and not lr_on
+              and as_timestamp(now()) - as_timestamp(states.climate.your_living_room_ac.last_changed) > 600 }}
+        then:
+        - action: climate.set_hvac_mode
+          data:
+            hvac_mode: heat
+          target:
+            entity_id: climate.your_living_room_ac
+        - action: climate.set_temperature
+          data:
+            temperature: "{{ target }}"
+          target:
+            entity_id: climate.your_living_room_ac
+      - if:
+        - condition: template
+          value_template: >
+            {{ not br_manual and not br_on and not bedroom_silence
+              and as_timestamp(now()) - as_timestamp(states.climate.your_bedroom_ac.last_changed) > 600 }}
+        then:
+        - action: climate.set_hvac_mode
+          data:
+            hvac_mode: heat
+          target:
+            entity_id: climate.your_bedroom_ac
+        - action: climate.set_temperature
+          data:
+            temperature: "{{ target }}"
+          target:
+            entity_id: climate.your_bedroom_ac
+
+    # Silence hours started: turn off bedroom AC (not manual)
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.id == 'silence_start' and climate_mode in ['Winter', 'Spring-Autumn'] and not br_manual and br_on }}"
+      sequence:
+      - action: climate.turn_off
+        target:
+          entity_id: climate.your_bedroom_ac
+
+    # Solar not allowed (any other allocation state): stop non-manual ACs
+    - conditions:
+      - condition: template
+        value_template: "{{ climate_mode in ['Winter', 'Spring-Autumn'] and allocation != 'allowed' }}"
+      sequence:
+      - if:
+        - condition: template
+          value_template: "{{ lr_on and not lr_manual }}"
+        then:
+        - action: climate.turn_off
+          target:
+            entity_id: climate.your_living_room_ac
+      - if:
+        - condition: template
+          value_template: "{{ br_on and not br_manual }}"
+        then:
+        - action: climate.turn_off
+          target:
+            entity_id: climate.your_bedroom_ac
+  mode: restart
+
+
+- id: 'climate_ac_manual_mode'
+  alias: Climate - AC Manual Mode Timer
+  description: >
+    Start/stop timer when AC manual mode is toggled.
+    Auto-reverts to solar control after configured duration.
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_living_room_ac_manual
+    id: lr_toggle
+  - trigger: state
+    entity_id: input_boolean.your_bedroom_ac_manual
+    id: br_toggle
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.your_living_room_ac_timer
+    id: lr_expired
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.your_bedroom_ac_timer
+    id: br_expired
+  conditions: []
+  actions:
+  - variables:
+      duration_h: "{{ states('input_number.your_ac_manual_mode_duration') | int(6) }}"
+      duration: "{{ '{:02d}:00:00'.format(duration_h) }}"
+  - choose:
+    # Living room manual ON: start timer
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.id == 'lr_toggle' and is_state('input_boolean.your_living_room_ac_manual', 'on') }}"
+      sequence:
+      - action: timer.start
+        data:
+          duration: "{{ duration }}"
+        target:
+          entity_id: timer.your_living_room_ac_timer
+    # Living room manual OFF: cancel timer
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.id == 'lr_toggle' and is_state('input_boolean.your_living_room_ac_manual', 'off') }}"
+      sequence:
+      - action: timer.cancel
+        target:
+          entity_id: timer.your_living_room_ac_timer
+    # Living room timer expired: revert to auto + notify
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.id == 'lr_expired' }}"
+      sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.your_living_room_ac_manual
+      - action: notify.your_notify_target
+        data:
+          title: AC Manual Mode
+          message: "Living room AC returned to automatic control after {{ duration_h }}h."
+    # Bedroom manual ON: start timer
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.id == 'br_toggle' and is_state('input_boolean.your_bedroom_ac_manual', 'on') }}"
+      sequence:
+      - action: timer.start
+        data:
+          duration: "{{ duration }}"
+        target:
+          entity_id: timer.your_bedroom_ac_timer
+    # Bedroom manual OFF: cancel timer
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.id == 'br_toggle' and is_state('input_boolean.your_bedroom_ac_manual', 'off') }}"
+      sequence:
+      - action: timer.cancel
+        target:
+          entity_id: timer.your_bedroom_ac_timer
+    # Bedroom timer expired: revert to auto + notify
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.id == 'br_expired' }}"
+      sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.your_bedroom_ac_manual
+      - action: notify.your_notify_target
+        data:
+          title: AC Manual Mode
+          message: "Bedroom AC returned to automatic control after {{ duration_h }}h."
+  mode: queued
+  max: 4

@@ -1,0 +1,414 @@
+###############################################################################
+# Lighting Automations — Motion, Scenes, and Modes
+#
+# Patterns demonstrated:
+#   1. Motion on/off with scene-aware brightness (movie/night/normal)
+#   2. Luminance-gated motion (only trigger below threshold or in night mode)
+#   3. Mode lifecycle: movie mode (AL disable), night mode (AL sleep), work mode
+#   4. Adaptive desk brightness from a computed template sensor
+#   5. Porch lights twilight fade driven by sun elevation template sensor
+#
+# Key design rules:
+#   - Motion off uses 'to: off + for:' — NEVER use delay/wait_for_trigger timers
+#   - Timeouts are input_number helpers, never hardcoded
+#   - Adaptive Lighting (AL) integration manages color temp and gradual dimming;
+#     automations only handle on/off and mode switches
+#
+# Entities to replace:
+#   your_*_motion_sensor       — binary_sensor for motion/occupancy
+#   your_*_illuminance         — sensor for lux or illuminance class
+#   your_*_light               — light or area
+#   your_movie_mode            — input_boolean
+#   your_night_mode            — input_boolean
+#   your_work_mode             — input_boolean
+#   your_work_mode_auto        — input_boolean: auto-activate on desk occupancy
+#   your_desk_occupancy        — binary_sensor for desk presence
+#   your_projector             — media_player (or switch) to auto-exit movie mode
+#   your_al_switch_*           — switch.adaptive_lighting_<zone>
+#   your_al_sleep_switch_*     — switch.adaptive_lighting_sleep_mode_<zone>
+#   your_porch_lights          — light entity
+#   your_porch_target_brightness — template sensor (maps sun elevation to brightness)
+#   timeout_motion_normal      — input_number (seconds)
+#   timeout_motion_night       — input_number (seconds)
+#   timeout_motion_movie       — input_number (seconds)
+#   brightness_movie           — input_number (percent)
+#   transition_on / transition_off — input_number (seconds)
+#   luminance_threshold_*      — input_number (lux)
+###############################################################################
+
+# ── Kitchen / Generic Room: Motion On ────────────────────────────────────────
+
+- id: 'room_light_motion_on'
+  alias: Your Room Light - On
+  description: Scene-aware light on motion
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.your_room_motion_sensor
+    to: 'on'
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: input_boolean.your_movie_mode
+        state: 'on'
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: light.your_room_light
+        data:
+          brightness_pct: '{{ states(''input_number.brightness_movie'') | int(15) }}'
+          transition: '{{ states(''input_number.transition_on'') | int(1) }}'
+    default:
+    - action: light.turn_on
+      target:
+        entity_id: light.your_room_light
+      data:
+        brightness_pct: 100
+        transition: '{{ states(''input_number.transition_on'') | int(1) }}'
+  mode: restart
+
+
+# ── Kitchen / Generic Room: Motion Off ───────────────────────────────────────
+
+- id: 'room_light_motion_off'
+  alias: Your Room Light - Off
+  description: Scene-aware light timeout — uses motion sensor 'to off + for' pattern
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.your_room_motion_sensor
+    to: 'off'
+    for:
+      seconds: >
+        {% if is_state('input_boolean.your_movie_mode', 'on') %}
+          {{ states('input_number.timeout_motion_movie') | int(15) }}
+        {% elif is_state('input_boolean.your_night_mode', 'on') %}
+          {{ states('input_number.timeout_motion_night') | int(30) }}
+        {% else %}
+          {{ states('input_number.timeout_motion_normal') | int(120) }}
+        {% endif %}
+  actions:
+  - action: light.turn_off
+    target:
+      entity_id: light.your_room_light
+    data:
+      transition: '{{ states(''input_number.transition_off'') | int(3) }}'
+  mode: single
+
+
+# ── Luminance-Gated Room: Motion On ──────────────────────────────────────────
+
+- id: 'luminance_room_light_on'
+  alias: Your Luminance Room Light - On
+  description: Only trigger when dark enough or in night mode
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.your_luminance_room_motion_sensor
+    to: 'on'
+  conditions:
+  - condition: or
+    conditions:
+    - condition: numeric_state
+      entity_id: sensor.your_room_illuminance
+      below: input_number.luminance_threshold_room
+    - condition: state
+      entity_id: input_boolean.your_night_mode
+      state: 'on'
+  actions:
+  - choose:
+    - conditions:
+      - condition: state
+        entity_id: input_boolean.your_movie_mode
+        state: 'on'
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: light.your_luminance_room_light
+        data:
+          brightness_pct: '{{ states(''input_number.brightness_movie'') | int(25) }}'
+          transition: '{{ states(''input_number.transition_on'') | int(1) }}'
+    default:
+    - action: light.turn_on
+      target:
+        entity_id: light.your_luminance_room_light
+      data:
+        transition: '{{ states(''input_number.transition_on'') | int(1) }}'
+  mode: restart
+
+
+# ── Luminance-Gated Room: Motion Off ─────────────────────────────────────────
+
+- id: 'luminance_room_light_off'
+  alias: Your Luminance Room Light - Off
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.your_luminance_room_motion_sensor
+    to: 'off'
+    for:
+      seconds: >
+        {% if is_state('input_boolean.your_movie_mode', 'on') %}
+          {{ states('input_number.timeout_motion_movie') | int(15) }}
+        {% elif is_state('input_boolean.your_night_mode', 'on') %}
+          {{ states('input_number.timeout_motion_night') | int(30) }}
+        {% else %}
+          {{ states('input_number.timeout_motion_normal') | int(120) }}
+        {% endif %}
+  actions:
+  - action: light.turn_off
+    target:
+      entity_id: light.your_luminance_room_light
+    data:
+      transition: '{{ states(''input_number.transition_off'') | int(3) }}'
+  mode: single
+
+
+# ── Movie Mode: On ────────────────────────────────────────────────────────────
+
+- id: 'lighting_movie_mode_on'
+  alias: Lighting - Movie Mode On
+  description: Disable AL and turn off main lights for movie watching
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_movie_mode
+    to: 'on'
+  actions:
+  - action: switch.turn_off
+    target:
+      entity_id:
+      - switch.your_al_switch_living_room
+      - switch.your_al_switch_kitchen
+    continue_on_error: true
+  - action: light.turn_off
+    target:
+      entity_id:
+      - light.your_living_room_main_lights
+      # Add other lights to suppress during movie mode
+  mode: single
+
+
+# ── Movie Mode: Off ───────────────────────────────────────────────────────────
+
+- id: 'lighting_movie_mode_off'
+  alias: Lighting - Movie Mode Off
+  description: Re-enable AL when movie mode ends
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_movie_mode
+    to: 'off'
+  actions:
+  - action: switch.turn_on
+    target:
+      entity_id:
+      - switch.your_al_switch_living_room
+      - switch.your_al_switch_kitchen
+    continue_on_error: true
+  mode: single
+
+
+# ── Movie Mode: Auto-Off When Projector Stops ─────────────────────────────────
+
+- id: 'lighting_movie_auto_off'
+  alias: Lighting - Movie Auto Off on Projector Stop
+  description: Turn off movie mode when projector turns off
+  triggers:
+  - trigger: state
+    entity_id: media_player.your_projector
+    to: 'off'
+    for:
+      seconds: 30
+  conditions:
+  - condition: state
+    entity_id: input_boolean.your_movie_mode
+    state: 'on'
+  actions:
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.your_movie_mode
+  mode: single
+
+
+# ── Night Mode: On ────────────────────────────────────────────────────────────
+
+- id: 'lighting_night_mode_on'
+  alias: Lighting - Night Mode On
+  description: Turn off all lights and activate AL sleep mode
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_night_mode
+    to: 'on'
+  actions:
+  # End work mode first so it can restore desk lights cleanly
+  - if:
+    - condition: state
+      entity_id: input_boolean.your_work_mode
+      state: 'on'
+    then:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.your_work_mode
+  - action: light.turn_off
+    target:
+      entity_id:
+      - light.your_living_room_lights
+      - light.your_bedroom_lights
+      - light.your_kitchen_lights
+      # Add all lights to turn off at night
+  - action: switch.turn_on
+    target:
+      entity_id:
+      - switch.your_al_sleep_switch_living_room
+      - switch.your_al_sleep_switch_bedroom
+      - switch.your_al_sleep_switch_kitchen
+    continue_on_error: true
+  mode: single
+
+
+# ── Night Mode: Off ───────────────────────────────────────────────────────────
+
+- id: 'lighting_night_mode_off'
+  alias: Lighting - Night Mode Off
+  description: Deactivate AL sleep mode when night mode ends
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_night_mode
+    to: 'off'
+  actions:
+  - action: switch.turn_off
+    target:
+      entity_id:
+      - switch.your_al_sleep_switch_living_room
+      - switch.your_al_sleep_switch_bedroom
+      - switch.your_al_sleep_switch_kitchen
+    continue_on_error: true
+  mode: single
+
+
+# ── Work Mode: On ─────────────────────────────────────────────────────────────
+
+- id: 'lighting_work_mode_on'
+  alias: Lighting - Work Mode On
+  description: Apply work mode desk lighting (blocked during night mode)
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_work_mode
+    to: 'on'
+  conditions:
+  - condition: state
+    entity_id: input_boolean.your_night_mode
+    state: 'off'
+  actions:
+  - action: script.your_apply_work_mode_script
+  mode: single
+
+
+# ── Work Mode: Off ────────────────────────────────────────────────────────────
+
+- id: 'lighting_work_mode_off'
+  alias: Lighting - Work Mode Off
+  description: Release lights back to Adaptive Lighting
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.your_work_mode
+    to: 'off'
+  actions:
+  - action: script.your_clear_work_mode_script
+  mode: single
+
+
+# ── Adaptive Desk Brightness ──────────────────────────────────────────────────
+# Requires a template sensor 'your_desk_light_target_brightness' that computes
+# brightness_pct from ambient lux + sun elevation. Returns 0 to turn off lights
+# when natural light is sufficient.
+
+- id: 'lighting_adaptive_desk_brightness'
+  alias: Lighting - Adaptive Desk Brightness
+  description: Adjust desk light brightness from ambient light sensor during work mode
+  triggers:
+  - trigger: state
+    entity_id: sensor.your_desk_light_target_brightness
+    for:
+      seconds: 3
+  conditions:
+  - condition: state
+    entity_id: input_boolean.your_work_mode
+    state: 'on'
+  - condition: state
+    entity_id: binary_sensor.your_desk_occupancy
+    state: 'on'
+  actions:
+  - variables:
+      brightness: "{{ states('sensor.your_desk_light_target_brightness') | int(70) }}"
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: "{{ brightness == 0 }}"
+      sequence:
+      - action: light.turn_off
+        target:
+          entity_id:
+          - light.your_desk_light_1
+          - light.your_desk_light_2
+        data:
+          transition: '{{ states(''input_number.transition_on'') | int(1) }}'
+    default:
+    - action: light.turn_on
+      target:
+        entity_id:
+        - light.your_desk_light_1
+        - light.your_desk_light_2
+      data:
+        brightness_pct: '{{ brightness }}'
+        color_temp_kelvin: '{{ states(''input_number.work_color_temp'') | int(4000) }}'
+        transition: '{{ states(''input_number.transition_on'') | int(1) }}'
+  mode: restart
+
+
+# ── Porch Lights: Twilight Fade On ────────────────────────────────────────────
+# Requires template sensor 'your_porch_target_brightness' that maps sun elevation
+# during civil twilight (0° to -6°) to brightness_pct (10 to 100%).
+
+- id: 'porch_lights_twilight_on'
+  alias: Porch Lights - Twilight Fade On
+  description: >
+    Gradually increase porch light brightness during dusk twilight.
+    Template sensor fires ~60s updates.
+  triggers:
+  - trigger: state
+    entity_id: sensor.your_porch_target_brightness
+  conditions:
+  - condition: template
+    value_template: "{{ state_attr('sun.sun', 'rising') == false }}"
+  - condition: template
+    value_template: >
+      {{ states('sensor.your_porch_target_brightness') | int(0) > 0 }}
+  actions:
+  - action: light.turn_on
+    target:
+      entity_id: light.your_porch_lights
+    data:
+      brightness_pct: "{{ states('sensor.your_porch_target_brightness') | int(10) }}"
+      transition: 30
+  mode: restart
+
+
+# ── Porch Lights: Dawn Off ────────────────────────────────────────────────────
+
+- id: 'porch_lights_dawn_off'
+  alias: Porch Lights - Dawn Off
+  description: Turn off porch lights when sun rises above threshold
+  triggers:
+  - trigger: numeric_state
+    entity_id: sun.sun
+    attribute: elevation
+    above: input_number.porch_lights_elevation_on
+  conditions:
+  - condition: state
+    entity_id: light.your_porch_lights
+    state: 'on'
+  actions:
+  - action: light.turn_off
+    target:
+      entity_id: light.your_porch_lights
+    data:
+      transition: 60
+  mode: single

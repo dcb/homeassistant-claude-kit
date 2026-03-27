@@ -1,0 +1,252 @@
+###############################################################################
+# Appliance State Machine
+#
+# Generic pattern for tracking appliance state across unavailability gaps.
+# WiFi-connected appliances (dishwashers, washers, dryers) often lose their
+# connection during/after cycles — sensors become unavailable before reporting
+# the final state. Use HA-side input_select to persist state independently.
+#
+# State machine: dirty → running → clean → dirty (auto-reset)
+# Transitions: sensor events drive state; HA helpers persist it
+#
+# Notifications:
+#   - Cycle done: immediate (passive during night)
+#   - Unload reminder: 30 min after done (when home + not night)
+#   - Solar reminder: run when surplus available + hasn't run in 48h
+#   - Supply alerts: low consumable sensors (salt, rinse aid, etc.)
+#
+# Entities to replace:
+#   your_appliance_status         — sensor: machine status from integration
+#                                  (typical values: running | ready | ending | unavailable)
+#   your_appliance_state          — input_select: dirty | running | clean
+#   your_appliance_cycles_counter — counter: total cycle count
+#   your_appliance_last_run       — sensor: timestamp of last completed cycle
+#   your_night_mode               — input_boolean
+#   your_away_mode                — input_boolean
+#   your_solar_spare_power        — sensor: solar surplus watts
+#   your_solar_spare_power_smoothed — sensor: smoothed spare power
+#   your_supply_sensor_1          — binary_sensor: low consumable (e.g. salt)
+#   your_supply_sensor_2          — binary_sensor: low consumable (e.g. rinse aid)
+#   your_solar_reminded_today     — input_boolean: dedup flag
+#   your_notify_target            — notify service
+###############################################################################
+
+# ── State Machine ─────────────────────────────────────────────────────────────
+
+- id: 'appliance_state_running'
+  alias: "Appliance: Mark Running"
+  triggers:
+    - trigger: state
+      entity_id: sensor.your_appliance_status
+      to: 'running'
+  actions:
+    - action: input_select.select_option
+      target:
+        entity_id: input_select.your_appliance_state
+      data:
+        option: running
+    - action: counter.increment
+      target:
+        entity_id: counter.your_appliance_cycles_counter
+  mode: single
+
+
+- id: 'appliance_state_clean'
+  alias: "Appliance: Mark Clean"
+  description: >
+    Transition to clean when cycle ends. Also catches the case where
+    the appliance goes unavailable directly from running (WiFi dies
+    before reporting 'ready' — common with EU ecodesign appliances).
+  triggers:
+    - trigger: state
+      entity_id: sensor.your_appliance_status
+      from: 'running'
+      to:
+        - 'ready'
+        - 'ending'
+        - 'unavailable'
+  conditions:
+    - condition: state
+      entity_id: input_select.your_appliance_state
+      state: 'running'
+  actions:
+    - action: input_select.select_option
+      target:
+        entity_id: input_select.your_appliance_state
+      data:
+        option: clean
+  mode: single
+
+
+- id: 'appliance_state_auto_reset'
+  alias: "Appliance: Auto-Reset to Dirty"
+  description: Auto-reset clean → dirty after 12 hours
+  triggers:
+    - trigger: state
+      entity_id: input_select.your_appliance_state
+      to: 'clean'
+      for:
+        hours: 12
+  actions:
+    - action: input_select.select_option
+      target:
+        entity_id: input_select.your_appliance_state
+      data:
+        option: dirty
+  mode: single
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+- id: 'appliance_cycle_done'
+  alias: "Appliance: Cycle Done"
+  triggers:
+    - trigger: state
+      entity_id: input_select.your_appliance_state
+      to: 'clean'
+  actions:
+    - action: notify.your_notify_target
+      data:
+        title: "Appliance Done"
+        message: "Cycle complete — ready to unload."
+        data:
+          push:
+            interruption-level: >
+              {{ 'passive' if is_state('input_boolean.your_night_mode', 'on')
+                 else 'time-sensitive' }}
+  mode: single
+
+
+- id: 'appliance_unload_reminder'
+  alias: "Appliance: Unload Reminder"
+  triggers:
+    - trigger: state
+      entity_id: input_select.your_appliance_state
+      to: 'clean'
+      for:
+        minutes: 30
+  conditions:
+    - condition: state
+      entity_id: input_boolean.your_away_mode
+      state: 'off'
+    - condition: state
+      entity_id: input_boolean.your_night_mode
+      state: 'off'
+  actions:
+    - action: notify.your_notify_target
+      data:
+        title: "Appliance"
+        message: "Done 30 minutes ago — time to unload?"
+        data:
+          push:
+            interruption-level: active
+  mode: single
+
+
+# ── Solar Reminder ────────────────────────────────────────────────────────────
+
+- id: 'appliance_solar_reminder'
+  alias: "Appliance: Solar Reminder"
+  description: >
+    Remind to run the appliance when there's plenty of spare solar
+    and it hasn't run in 48 hours. Max one notification per day.
+  triggers:
+    - trigger: time_pattern
+      minutes: "/30"
+      id: check
+    - trigger: time
+      at: "00:00:00"
+      id: midnight_reset
+  conditions: []
+  actions:
+    - choose:
+      - conditions:
+        - condition: trigger
+          id: midnight_reset
+        sequence:
+        - action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.your_solar_reminded_today
+      - conditions:
+        - condition: trigger
+          id: check
+        - condition: state
+          entity_id: input_boolean.your_solar_reminded_today
+          state: 'off'
+        - condition: template
+          value_template: "{{ has_value('sensor.your_solar_spare_power') }}"
+        - condition: numeric_state
+          entity_id: sensor.your_solar_spare_power_smoothed
+          above: 2000
+        - condition: template
+          value_template: >
+            {{ states('sensor.your_appliance_status')
+               in ['ready', 'unavailable', 'unknown'] }}
+        - condition: template
+          value_template: >
+            {% set last = states('sensor.your_appliance_last_run') %}
+            {{ last not in ['unknown', 'unavailable']
+               and (now() - as_datetime(last)).total_seconds() > 172800 }}
+        - condition: time
+          after: "10:00:00"
+          before: "16:00:00"
+        - condition: state
+          entity_id: input_boolean.your_away_mode
+          state: 'off'
+        sequence:
+        - action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.your_solar_reminded_today
+        - action: notify.your_notify_target
+          data:
+            title: "Appliance Reminder"
+            message: >
+              {% set last = states('sensor.your_appliance_last_run') %}
+              {% if last not in ['unknown', 'unavailable'] %}
+              Haven't run the appliance in
+              {{ ((now() - as_datetime(last)).total_seconds() / 3600) | int }}h.
+              {% endif %}
+              Solar surplus: {{ states('sensor.your_solar_spare_power_smoothed') | int }}W
+              — good time to run it!
+            data:
+              push:
+                interruption-level: passive
+  mode: single
+
+
+# ── Supply Alerts ─────────────────────────────────────────────────────────────
+
+- id: 'appliance_supply_1_low'
+  alias: "Appliance: Supply 1 Low"
+  description: e.g. salt, detergent, filter
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.your_supply_sensor_1
+      to: 'on'
+  actions:
+    - action: notify.your_notify_target
+      data:
+        title: "Appliance"
+        message: "Supply 1 is low — needs refill."
+        data:
+          push:
+            interruption-level: passive
+  mode: single
+
+
+- id: 'appliance_supply_2_low'
+  alias: "Appliance: Supply 2 Low"
+  description: e.g. rinse aid, softener
+  triggers:
+    - trigger: state
+      entity_id: binary_sensor.your_supply_sensor_2
+      to: 'on'
+  actions:
+    - action: notify.your_notify_target
+      data:
+        title: "Appliance"
+        message: "Supply 2 is low — needs refill."
+        data:
+          push:
+            interruption-level: passive
+  mode: single

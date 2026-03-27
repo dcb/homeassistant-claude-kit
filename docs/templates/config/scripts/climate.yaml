@@ -1,0 +1,284 @@
+###############################################################################
+# Climate Scripts
+#
+# Entities to replace:
+#   your_zone_*_trv_*            — climate entity (TRV per radiator)
+#   your_zone_*_sensor           — temperature sensor for the zone
+#   your_zone_*_effective_target — sensor: effective target (preheat-injected or plain target)
+#   your_target_temperature      — input_number: global setpoint
+#   your_zone_*_target           — input_number: per-zone setpoint
+#   your_zone_*_override         — input_boolean: per-zone override
+#   your_boiler                  — climate entity for central heating
+#   your_last_boiler_command     — input_datetime: for anti-cycling guard
+#   your_boiler_min_cycle_minutes — input_number
+#   your_climate_mode            — input_select
+#   your_hysteresis_heat_on      — input_number: degrees below target to start heating
+#   your_hysteresis_heat_off     — input_number: degrees above target to stop heating
+#
+# Zone model:
+#   - Each zone maps to N TRVs with a shared zone temperature sensor
+#   - TRV local_temperature_calibration offsets correct for TRV placement bias
+#   - effective_target sensors inject preheat boost when preheat_mode != idle
+#   - Central heating runs when any zone needs heat (any TRV in 'heat' mode)
+###############################################################################
+
+update_zone_climate:
+  alias: Update Zone Climate
+  description: Update TRV offsets and targets for a specific zone
+  fields:
+    zone_id:
+      selector:
+        select:
+          options:
+            - living_room
+            - bedroom
+            - extra_room
+            # Add your zone IDs here
+      name: Zone ID
+      required: true
+  sequence:
+  - variables:
+      # Map each zone to its TRVs and sensor
+      # Replace with your actual entity naming
+      radiators: >
+        {{ {
+          'living_room': ['your_living_room_trv_1', 'your_living_room_trv_2'],
+          'bedroom': ['your_bedroom_trv'],
+          'extra_room': ['your_extra_room_trv'],
+        }[zone_id] }}
+      sensor_id: >
+        {{ {
+          'living_room': 'sensor.your_living_room_temp_sensor',
+          'bedroom': 'sensor.your_bedroom_temp_sensor',
+          'extra_room': 'sensor.your_extra_room_temp_sensor',
+        }[zone_id] }}
+      effective_target_id: >
+        {{ {
+          'living_room': 'sensor.your_living_room_effective_target',
+          'bedroom': 'sensor.your_bedroom_effective_target',
+          'extra_room': 'sensor.your_extra_room_effective_target',
+        }[zone_id] }}
+  - variables:
+      actual_temp: "{{ states(sensor_id) | float(20) }}"
+      effective_target: "{{ states(effective_target_id) | float(20) }}"
+      hysteresis_on: "{{ states('input_number.your_hysteresis_heat_on') | float(0.5) }}"
+      hysteresis_off: "{{ states('input_number.your_hysteresis_heat_off') | float(0.3) }}"
+  # Update TRV local temperature calibration (offset correction)
+  - repeat:
+      for_each: "{{ radiators }}"
+      sequence:
+      - variables:
+          radiator_id: "{{ repeat.item }}"
+          trv_internal: "{{ state_attr('climate.' ~ radiator_id, 'current_temperature') | float(0) }}"
+          current_cal: "{{ states('number.' ~ radiator_id ~ '_local_temperature_calibration') | float(0) }}"
+          trv_synced: >
+            {% set cal_id = 'number.' ~ radiator_id ~ '_local_temperature_calibration' %}
+            {% set clim_id = 'climate.' ~ radiator_id %}
+            {% if cal_id in states and states[cal_id].state not in ['unknown', 'unavailable'] %}
+              {{ states[cal_id].last_changed <= states[clim_id].last_updated }}
+            {% else %}
+              {{ false }}
+            {% endif %}
+      - if:
+        - condition: template
+          value_template: "{{ state_attr('climate.' ~ radiator_id, 'current_temperature') is not none and trv_synced }}"
+        then:
+        - variables:
+            ideal_offset: "{{ actual_temp - trv_internal + current_cal }}"
+            cal_min: "{{ state_attr('number.' ~ radiator_id ~ '_local_temperature_calibration', 'min') | float(-6) }}"
+            cal_max: "{{ state_attr('number.' ~ radiator_id ~ '_local_temperature_calibration', 'max') | float(6) }}"
+            clamped_offset: "{{ [cal_min, [ideal_offset, cal_max] | min] | max }}"
+            variance: "{{ (current_cal - clamped_offset) | abs }}"
+        - if:
+          - condition: template
+            value_template: "{{ variance > 0.3 }}"
+          then:
+          - action: number.set_value
+            target:
+              entity_id: "number.{{ radiator_id }}_local_temperature_calibration"
+            data:
+              value: >
+                {% if (actual_temp | float) < ((effective_target | float) - hysteresis_on) %}
+                  {{ clamped_offset | round(0, 'floor') | int }}
+                {% else %}
+                  {{ clamped_offset | round }}
+                {% endif %}
+  # Set TRV heat/off mode based on zone temperature vs target
+  - repeat:
+      for_each: "{{ radiators }}"
+      sequence:
+      - variables:
+          radiator_id: "{{ repeat.item }}"
+          current_mode: "{{ states('climate.' ~ radiator_id) }}"
+      - if:
+        - condition: template
+          value_template: "{{ (actual_temp | float) < ((effective_target | float) - hysteresis_on) and current_mode != 'heat' }}"
+        then:
+        - action: climate.set_hvac_mode
+          data:
+            hvac_mode: "heat"
+          target:
+            entity_id: "{{ 'climate.' ~ radiator_id }}"
+      - if:
+        - condition: template
+          value_template: "{{ (actual_temp | float) >= ((effective_target | float) + hysteresis_off) and current_mode != 'off' }}"
+        then:
+        - action: climate.set_hvac_mode
+          data:
+            hvac_mode: "off"
+          target:
+            entity_id: "{{ 'climate.' ~ radiator_id }}"
+      - if:
+        - condition: template
+          value_template: >
+            {% set max_temp = state_attr('climate.' ~ radiator_id, 'max_temp') | float(30) %}
+            {{ (actual_temp | float) < ((effective_target | float) - hysteresis_on) and
+              (state_attr('climate.' ~ radiator_id, 'temperature') | float(0)) != max_temp }}
+        then:
+        - action: climate.set_temperature
+          data:
+            temperature: "{{ state_attr('climate.' ~ radiator_id, 'max_temp') | float(30) }}"
+          target:
+            entity_id: "{{ 'climate.' ~ radiator_id }}"
+  mode: queued
+  max: 4
+
+
+evaluate_central_heating:
+  alias: Evaluate Central Heating
+  description: >
+    Check if central heating boiler should run based on zone needs.
+    Anti-cycling guard prevents rapid mode switching.
+  sequence:
+  - variables:
+      needs_heat: >
+        {% set ns = namespace(heating=false) %}
+        {% set trvs = [
+          'climate.your_living_room_trv_1',
+          'climate.your_living_room_trv_2',
+          'climate.your_bedroom_trv',
+          'climate.your_extra_room_trv',
+        ] %}
+        {% for trv in trvs %}
+          {% if states(trv) == 'heat' %}
+            {% set ns.heating = true %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.heating }}
+      desired_mode: >
+        {% if needs_heat and states('input_select.your_climate_mode') != 'Off' %}
+          heat
+        {% else %}
+          off
+        {% endif %}
+      current_mode: "{{ states('climate.your_boiler') }}"
+      last_cmd_ts: >
+        {{ as_timestamp(states('input_datetime.your_last_boiler_command'), 0) }}
+      min_cycle_sec: >
+        {{ states('input_number.your_boiler_min_cycle_minutes') | int(5) * 60 }}
+      guard_ok: >
+        {{ last_cmd_ts == 0 or (now().timestamp() - last_cmd_ts) > min_cycle_sec }}
+  - condition: template
+    value_template: "{{ desired_mode != current_mode }}"
+  - if:
+    - condition: template
+      value_template: "{{ guard_ok }}"
+    then:
+    - action: climate.set_hvac_mode
+      data:
+        hvac_mode: "{{ desired_mode }}"
+      target:
+        entity_id: climate.your_boiler
+    - action: input_datetime.set_datetime
+      data:
+        datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+      target:
+        entity_id: input_datetime.your_last_boiler_command
+    else:
+    # Guard blocked — exit cleanly. Next climate trigger will re-invoke naturally.
+    - stop: "Anti-cycling guard active"
+  mode: restart
+
+
+sync_all_zones_to_target:
+  alias: Sync All Zones to Target
+  description: Reset overrides and sync zone targets to global target
+  sequence:
+  - action: input_boolean.turn_off
+    target:
+      entity_id:
+      - input_boolean.your_zone_living_room_override
+      - input_boolean.your_zone_bedroom_override
+      - input_boolean.your_zone_extra_room_override
+  - variables:
+      global_target: "{{ states('input_number.your_target_temperature') | float(20) }}"
+  - action: input_number.set_value
+    data:
+      value: "{{ global_target }}"
+    target:
+      entity_id:
+      - input_number.your_zone_living_room_target
+      - input_number.your_zone_bedroom_target
+      - input_number.your_zone_extra_room_target
+  mode: single
+
+
+set_target_temperature_day:
+  alias: Set Target Temperature (Day)
+  description: Set global target to daytime setpoint
+  sequence:
+  - action: input_number.set_value
+    data:
+      value: "{{ states('input_number.your_target_temperature_day') | float(21) }}"
+    target:
+      entity_id: input_number.your_target_temperature
+  mode: single
+
+
+set_night_target_temperature:
+  alias: Set Target Temperature (Night)
+  description: Set global target to nighttime setpoint
+  sequence:
+  - action: input_number.set_value
+    data:
+      value: "{{ states('input_number.your_target_temperature_night') | float(18) }}"
+    target:
+      entity_id: input_number.your_target_temperature
+  mode: single
+
+
+set_zone_override:
+  alias: Set Zone Override
+  description: Set a zone override temperature from the dashboard
+  fields:
+    zone_id:
+      selector:
+        select:
+          options:
+            - living_room
+            - bedroom
+            - extra_room
+      name: Zone ID
+      required: true
+    temperature:
+      selector:
+        number:
+          min: 3
+          max: 30
+          step: 0.5
+          unit_of_measurement: "°C"
+      name: Temperature
+      required: true
+  sequence:
+  - action: input_boolean.turn_on
+    target:
+      entity_id: "input_boolean.your_zone_{{ zone_id }}_override"
+  - action: input_number.set_value
+    data:
+      value: "{{ temperature }}"
+    target:
+      entity_id: "input_number.your_zone_{{ zone_id }}_target"
+  - action: script.update_zone_climate
+    data:
+      zone_id: "{{ zone_id }}"
+  mode: single

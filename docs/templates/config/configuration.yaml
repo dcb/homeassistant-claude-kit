@@ -1,0 +1,35 @@
+###############################################################################
+# configuration.yaml skeleton
+#
+# Replace all your_* placeholders with your actual entity IDs, names, and values.
+# After editing, restart Home Assistant for changes to take effect.
+#
+# IMPORTANT: input_* helpers defined here create persistent entities.
+# Never hardcode their values in automations — always read via states().
+###############################################################################
+
+homeassistant:
+  name: Your Home
+  latitude: !secret latitude
+  longitude: !secret longitude
+  elevation: 0              # Your elevation in meters above sea level
+  currency: EUR             # Your currency code (EUR, USD, GBP, etc.)
+  country: XX               # Your ISO 3166-1 alpha-2 country code
+  unit_system: metric       # metric or imperial
+  time_zone: Your/Timezone  # e.g. Europe/London, America/New_York
+  # helpers.yaml is merged in here — add/remove helpers there, not in this file
+  packages:
+    helpers: !include helpers.yaml
+
+# Automation splits — reference your YAML files
+automation: !include_dir_merge_list automations/
+script: !include_dir_merge_named scripts/
+
+# Core integrations (enable as needed)
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 172.30.33.0/24
+
+logger:
+  default: warning

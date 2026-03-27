@@ -1,0 +1,238 @@
+###############################################################################
+# Lighting Scripts
+#
+# apply_work_mode    — snapshot desk lights, disable AL sleep mode, apply
+#                      brightness from desk_light_target_brightness sensor
+# clear_work_mode    — restore snapshot, re-enable AL sleep mode if night mode on
+# light_alert_animation — flash lights in alternating colors (scene snapshot/restore)
+# light_blink_animation — gentle blink to a color and back (scene snapshot/restore)
+#
+# Entities to replace:
+#   your_desk_light_1/2         — light entities for desk
+#   your_al_switch_room         — switch.adaptive_lighting_<zone>
+#   your_al_sleep_switch_room   — switch.adaptive_lighting_sleep_mode_<zone>
+#   your_night_mode             — input_boolean
+#   your_desk_light_target_brightness — sensor: computed brightness % (0 = off)
+#   your_work_color_temp        — input_number: color temperature in Kelvin
+#   transition_on               — input_number: transition seconds
+###############################################################################
+
+apply_work_mode:
+  alias: Apply Work Mode Lighting
+  sequence:
+  # Snapshot desk light state so we can restore on exit
+  - action: scene.create
+    data:
+      scene_id: work_mode_snapshot
+      snapshot_entities:
+      - light.your_desk_light_1
+      - light.your_desk_light_2
+  - action: switch.turn_off
+    target:
+      entity_id: switch.your_al_sleep_switch_living_room
+    continue_on_error: true
+  - action: adaptive_lighting.set_manual_control
+    data:
+      entity_id: switch.your_al_switch_living_room
+      manual_control: true
+      lights:
+      - light.your_desk_light_1
+      - light.your_desk_light_2
+    continue_on_error: true
+  - variables:
+      brightness: "{{ states('sensor.your_desk_light_target_brightness') | int(70) }}"
+  - if:
+    - condition: template
+      value_template: "{{ brightness > 0 }}"
+    then:
+    - action: light.turn_on
+      target:
+        entity_id:
+        - light.your_desk_light_1
+        - light.your_desk_light_2
+      data:
+        brightness_pct: '{{ brightness }}'
+        color_temp_kelvin: '{{ states(''input_number.your_work_color_temp'') | int(4000) }}'
+        transition: '{{ states(''input_number.transition_on'') | int(1) }}'
+  mode: single
+
+
+clear_work_mode:
+  alias: Clear Work Mode Lighting
+  sequence:
+  # Restore desk lights to their pre-work-mode state
+  - if:
+    - condition: template
+      value_template: "{{ states('scene.work_mode_snapshot') not in ['unknown', 'unavailable'] }}"
+    then:
+    - action: scene.turn_on
+      target:
+        entity_id: scene.work_mode_snapshot
+      data:
+        transition: "{{ states('input_number.transition_on') | int(1) }}"
+  # Re-enable AL sleep if night mode is active
+  - if:
+    - condition: state
+      entity_id: input_boolean.your_night_mode
+      state: 'on'
+    then:
+    - action: switch.turn_on
+      target:
+        entity_id: switch.your_al_sleep_switch_living_room
+      continue_on_error: true
+  - action: adaptive_lighting.set_manual_control
+    data:
+      entity_id: switch.your_al_switch_living_room
+      manual_control: false
+      lights:
+      - light.your_desk_light_1
+      - light.your_desk_light_2
+    continue_on_error: true
+  mode: single
+
+
+light_alert_animation:
+  alias: Light Alert Animation
+  description: Flash lights in alternating colors then restore original state
+  fields:
+    lights:
+      description: Entity ID or list of entity IDs to animate
+      required: true
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    flashes:
+      description: Number of flash cycles
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+    flash_duration:
+      description: Seconds per color
+      default: 0.5
+      selector:
+        number:
+          min: 0.1
+          max: 5
+          step: 0.1
+    color_1:
+      description: First color as [R, G, B]
+      default: [255, 0, 0]
+      selector:
+        color_rgb:
+    color_2:
+      description: Second color as [R, G, B]
+      default: [0, 0, 255]
+      selector:
+        color_rgb:
+  sequence:
+  - variables:
+      entities: "{{ lights if lights is list else [lights] }}"
+      flash_count: "{{ flashes | default(5) | int }}"
+      duration: "{{ flash_duration | default(0.5) | float }}"
+      rgb_1: "{{ color_1 | default([255, 0, 0]) }}"
+      rgb_2: "{{ color_2 | default([0, 0, 255]) }}"
+  - action: scene.create
+    data:
+      scene_id: light_alert_snapshot
+      snapshot_entities: "{{ entities }}"
+  - repeat:
+      count: "{{ flash_count }}"
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: "{{ entities }}"
+        data:
+          rgb_color: "{{ rgb_1 }}"
+          brightness: 255
+          transition: 0
+      - delay:
+          seconds: "{{ duration }}"
+      - action: light.turn_on
+        target:
+          entity_id: "{{ entities }}"
+        data:
+          rgb_color: "{{ rgb_2 }}"
+          brightness: 255
+          transition: 0
+      - delay:
+          seconds: "{{ duration }}"
+  - action: scene.turn_on
+    target:
+      entity_id: scene.light_alert_snapshot
+    data:
+      transition: 1
+  mode: single
+
+
+light_blink_animation:
+  alias: Light Blink Animation
+  description: Fade lights to a color and back to original state, N times
+  fields:
+    lights:
+      description: Entity ID or list of entity IDs to animate
+      required: true
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    blinks:
+      description: Number of blinks
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 10
+    color:
+      description: Alert color as [R, G, B]
+      default: [255, 180, 30]
+      selector:
+        color_rgb:
+    transition:
+      description: Fade transition in seconds (each way)
+      default: 0.4
+      selector:
+        number:
+          min: 0.1
+          max: 2.0
+          step: 0.1
+  sequence:
+  - variables:
+      entities: "{{ lights if lights is list else [lights] }}"
+      blink_count: "{{ blinks | default(1) | int }}"
+      rgb: "{{ color | default([255, 180, 30]) }}"
+      t: "{{ transition | default(0.4) | float }}"
+  # Only animate if at least one light is on
+  - condition: template
+    value_template: >
+      {% set ns = namespace(any_on=false) %}
+      {% for e in entities %}
+        {% if is_state(e, 'on') %}{% set ns.any_on = true %}{% endif %}
+      {% endfor %}
+      {{ ns.any_on }}
+  - action: scene.create
+    data:
+      scene_id: light_blink_snapshot
+      snapshot_entities: "{{ entities }}"
+  - repeat:
+      count: "{{ blink_count }}"
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id: "{{ entities }}"
+        data:
+          rgb_color: "{{ rgb }}"
+          brightness: 255
+          transition: "{{ t }}"
+      - delay:
+          seconds: "{{ t + 0.3 }}"
+      - action: scene.turn_on
+        target:
+          entity_id: scene.light_blink_snapshot
+        data:
+          transition: "{{ t }}"
+      - delay:
+          seconds: "{{ t + 0.3 }}"
+  mode: single

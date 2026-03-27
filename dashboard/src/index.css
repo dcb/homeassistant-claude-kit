@@ -1,0 +1,276 @@
+@import "tailwindcss";
+
+@theme {
+  /* Background */
+  --color-bg-primary: #0f0f14;
+  --color-bg-card: #1a1a24;
+  --color-bg-elevated: #252532;
+
+  /* Accents */
+  --color-accent: #6366f1;
+  --color-accent-violet: #8b5cf6;
+  --color-accent-blue: #3b82f6;
+  --color-accent-warm: #f59e0b;
+  --color-accent-cool: #06b6d4;
+  --color-accent-cool-light: #93c5fd;
+  --color-accent-green: #22c55e;
+  --color-accent-red: #ef4444;
+
+  /* Touch targets */
+  --touch-min: 44px;
+  --touch-comfortable: 48px;
+
+  /* Surfaces */
+  --color-surface-dim: #374151;
+  --color-accent-cover: #67a0c4;
+
+  /* Text */
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-dim: #475569;
+}
+
+/* react-day-picker dark theme overrides */
+.rdp-custom {
+  --rdp-accent-color: var(--color-accent);
+  --rdp-accent-background-color: var(--color-accent);
+  --rdp-range_middle-background-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  --rdp-range_middle-color: var(--color-text-primary);
+  --rdp-selected-color: #fff;
+  --rdp-day-height: 2rem;
+  --rdp-day-width: 2.25rem;
+}
+
+/* Amp slider (Tesla card) */
+.amp-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-bg-elevated);
+  outline: none;
+}
+.amp-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: grab;
+  border: 2px solid var(--color-bg-card);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.amp-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+}
+.amp-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: grab;
+  border: 2px solid var(--color-bg-card);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* Climate glow animations */
+@keyframes glow-warm {
+  0%, 100% { color: #f59e0b; filter: drop-shadow(0 0 3px #f59e0b80); }
+  50% { color: #ef4444; filter: drop-shadow(0 0 5px #ef444480); }
+}
+@keyframes glow-cool {
+  0%, 100% { color: #06b6d4; filter: drop-shadow(0 0 3px #06b6d480); }
+  50% { color: #3b82f6; filter: drop-shadow(0 0 5px #3b82f680); }
+}
+
+/* Active light icon glow */
+@utility glow-light {
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
+/* Occupancy indicator — subtler than animate-pulse */
+@keyframes occupancy-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+@utility animate-occupancy {
+  animation: occupancy-pulse 2.5s ease-in-out infinite;
+}
+
+/* Battery charging shimmer */
+@keyframes battery-shimmer {
+  0% { background-position: -100% 0; }
+  100% { background-position: 200% 0; }
+}
+.battery-charging {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.45) 45%,
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0.45) 55%,
+    transparent 100%
+  );
+  background-size: 35% 100%;
+  background-repeat: no-repeat;
+  animation: battery-shimmer 2.5s ease-in-out infinite;
+}
+
+/* Battery icon charging pulse */
+@keyframes battery-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Dishwasher active pulse */
+.dishwasher-active {
+  animation: dishwasher-pulse 1.5s ease-in-out infinite;
+}
+@keyframes dishwasher-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Hide scrollbar but keep scrolling */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Visually hidden but accessible to screen readers */
+@utility sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Global touch UX: prevent tap highlight flash and text selection on controls */
+button, [role="button"], input[type="range"], .touch-none {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Reduced motion: kill CSS animations/transitions, keep opacity/color changes */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
+  }
+}
+
+/* Focus-visible: keyboard users see outlines, touch/mouse users don't */
+button:focus-visible, [role="button"]:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Pointer-coarse: enlarge touch targets on touch devices */
+@media (pointer: coarse) {
+  .amp-slider::-webkit-slider-thumb {
+    width: 28px;
+    height: 28px;
+  }
+  .amp-slider::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* CSS containment: isolate card repaints from the rest of the page */
+@utility contain-card {
+  contain: layout style paint;
+}
+
+/* Control pending state animations */
+@keyframes knight-rider {
+  0%   { left: -2px; }
+  50%  { left: calc(70% - 2px); }
+  100% { left: -2px; }
+}
+
+@keyframes correction-shake {
+  0%   { transform: translateX(0); }
+  15%  { transform: translateX(-3px); }
+  30%  { transform: translateX(3px); }
+  45%  { transform: translateX(-2px); }
+  60%  { transform: translateX(2px); }
+  75%  { transform: translateX(-1px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes text-glow {
+  0%, 100% { text-shadow: 0 0 4px rgba(245, 158, 11, 0.4); }
+  50%      { text-shadow: 0 0 10px rgba(245, 158, 11, 0.7), 0 0 20px rgba(245, 158, 11, 0.3); }
+}
+
+@keyframes control-spin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes slider-glow {
+  0%, 100% { box-shadow: 0 0 6px rgba(245, 158, 11, 0.5), 0 0 12px rgba(245, 158, 11, 0.2); }
+  50%      { box-shadow: 0 0 12px rgba(245, 158, 11, 0.8), 0 0 24px rgba(245, 158, 11, 0.4); }
+}
+
+@utility animate-knight-rider {
+  animation: knight-rider 1.2s ease-in-out infinite;
+}
+
+@utility animate-shake {
+  animation: correction-shake 0.4s ease-out;
+}
+
+@utility animate-text-glow {
+  animation: text-glow 1.2s ease-in-out infinite;
+}
+
+@utility animate-control-spin {
+  animation: control-spin 1s linear infinite;
+}
+
+@utility animate-slider-glow {
+  animation: slider-glow 1.2s ease-in-out infinite;
+}
+
+/* Subtle noise texture for depth — SVG feTurbulence applied to a rect.
+   Key: filter must be applied to visible content (rect), and # encoded as %23 in data URIs. */
+#root::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow-x: clip;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
