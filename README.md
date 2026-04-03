@@ -111,6 +111,9 @@ React 19 + TypeScript + Tailwind v4, deployed as an HA `panel_custom` via `make 
 
 See [dashboard/CLAUDE.md](dashboard/CLAUDE.md) for the full development guide.
 
+> **Tip: Make the dashboard your default view**
+> HA always opens to a Lovelace dashboard by default. To land on the custom panel instead, install [Custom Sidebar](https://github.com/Villhellm/custom-sidebar) via HACS, add it to `frontend.extra_module_url`, and create `custom-sidebar-config.yaml` with `default_path: /custom-dashboard`. See [Step 10 in the Setup Guide](SETUP.md#step-10-make-the-dashboard-the-default-view-optional) for details.
+
 ### Health Monitoring & Charts
 
 <p align="center">

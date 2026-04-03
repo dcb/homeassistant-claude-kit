@@ -391,6 +391,45 @@ with the original guidance comments for sections not covered.
 6. Verify by asking the user to open HA and confirm the dashboard panel appears.
    Provide the URL: `http://[HA_URL]/custom-dashboard`
 
+### Optional: Make the dashboard the default view
+
+After the dashboard deploys successfully, ask the user:
+
+> "Would you like to make this dashboard your default view when opening Home Assistant?
+> This requires installing the [Custom Sidebar](https://github.com/Villhellm/custom-sidebar)
+> plugin via HACS. If you don't have HACS, you can skip this — your dashboard is still
+> accessible from the sidebar."
+
+If the user wants this:
+
+1. Verify HACS is installed:
+   ```bash
+   source .env && ssh "$SSH_USER@$HA_HOST" "source /etc/profile.d/claude-ha.sh; source ${HA_REMOTE_PATH:=/config/}.env; ha-api state sensor.hacs" 2>/dev/null
+   ```
+   If HACS is not installed, tell the user to install it first from [hacs.xyz](https://hacs.xyz/) and skip this step.
+
+2. Tell the user to install Custom Sidebar via HACS:
+   - Open HA → HACS → Frontend → search "Custom Sidebar" → Install
+   - This cannot be done via CLI — HACS frontend installations require the UI
+
+3. Once confirmed installed, add the plugin to `configuration.yaml` under `frontend`:
+   ```yaml
+   frontend:
+     extra_module_url:
+       - /hacsfiles/custom-sidebar/custom-sidebar-plugin.js
+   ```
+   **Merge with existing `frontend:` block** — do not duplicate the key.
+
+4. Create `config/custom-sidebar-config.yaml`:
+   ```yaml
+   default_path: /custom-dashboard
+   ```
+
+5. Push the config and tell the user to restart HA (this change requires a restart, not just a reload):
+   ```bash
+   make push
+   ```
+
 ## Step 10: Save Completion Checkpoint
 
 ```bash

@@ -106,6 +106,7 @@ Some automation templates and dashboard features depend on additional HA integra
 | [WebRTC Camera](https://github.com/AlexxIT/WebRTC) | Camera streams on mobile/iOS (WebRTC) | HACS |
 | [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) | Energy template (solar production forecast) | HA built-in integration |
 | `panel_custom` | Dashboard deployment | HA built-in — configured automatically by `make deploy-dashboard` |
+| [Custom Sidebar](https://github.com/Villhellm/custom-sidebar) | Making the dashboard the default view | HACS |
 
 > **None of these are required for initial setup.** The setup skills detect what's available and only configure features you have. You can always add integrations later and re-run `setup-customize`.
 
@@ -274,6 +275,25 @@ make deploy-dashboard
 ```
 
 </details>
+
+### Step 10: Make the dashboard the default view (optional)
+
+HA doesn't natively support setting a `panel_custom` as the default landing page — it always opens to the first Lovelace dashboard. The [Custom Sidebar](https://github.com/Villhellm/custom-sidebar) HACS plugin can override this.
+
+1. Install **Custom Sidebar** via HACS (Frontend category)
+2. Add the plugin to your `configuration.yaml`:
+   ```yaml
+   frontend:
+     extra_module_url:
+       - /hacsfiles/custom-sidebar/custom-sidebar-plugin.js
+   ```
+3. Create `config/custom-sidebar-config.yaml`:
+   ```yaml
+   default_path: /custom-dashboard
+   ```
+4. Restart Home Assistant
+
+After restart, opening HA will land on your custom dashboard instead of the default Lovelace view.
 
 ---
 
