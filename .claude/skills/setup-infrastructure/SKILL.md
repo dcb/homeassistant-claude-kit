@@ -230,6 +230,51 @@ print("Checkpoint saved to setup-state.json")
 
 Run this via: `source .env && python3 -c "$(cat << 'PYEOF'` ... `PYEOF`)"` — using a quoted heredoc to avoid shell expansion issues with the `.env` values.
 
+## Step 10: Stamp the kit version anchor
+
+`.kit-version` records which kit version this install is based on, so the `upgrade` skill can later
+compute what changed. It ships with `version:` already set; this step fills in `commit:` (the exact
+kit commit the install is on) so upgrades have a precise, history-independent baseline. **Idempotent**
+and **ZIP-safe** — re-running changes nothing, and an install with no git history still works.
+
+Rules:
+- Write **only `commit:`** — never touch `version:` (the shipped value is authoritative; the `upgrade`
+  skill bumps it later). This avoids any producer/consumer ambiguity.
+- Stamp `commit:` only when it is empty/missing; never overwrite a non-empty value (an `upgrade` may
+  have advanced it).
+- If there is no `.git` directory or no reachable remote (e.g. a ZIP download), leave `commit: ""` and
+  continue — `version:` alone supports baselining. Do not error.
+
+```python
+import re, subprocess, pathlib
+
+kv = pathlib.Path(".kit-version")
+if kv.exists():
+    text = kv.read_text()
+    m = re.search(r'^commit:\s*"?([^"\n]*)"?\s*$', text, re.M)
+    current = (m.group(1) if m else "").strip()
+    if not current:
+        sha = ""
+        try:
+            sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                                 timeout=5).stdout.strip()
+        except Exception:
+            sha = ""   # no git / ZIP install — leave commit empty, this is fine
+        if sha:
+            if m:
+                text = re.sub(r'^commit:.*$', f'commit: "{sha}"', text, flags=re.M)
+            else:
+                text = text.rstrip() + f'\ncommit: "{sha}"\n'
+            kv.write_text(text)
+            print(f"Stamped .kit-version commit: {sha}")
+        else:
+            print("No git history (ZIP install?) — left .kit-version commit empty")
+    else:
+        print(f".kit-version already stamped (commit: {current}) — unchanged")
+else:
+    print(".kit-version not present — skipping stamp")
+```
+
 ## Completion
 
 Tell the user:

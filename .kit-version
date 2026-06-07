@@ -1,0 +1,6 @@
+# Which homeassistant-claude-kit version this install is based on.
+# In the KIT repo: the current released version (authoritative — bumped by the `release` skill).
+# In an INSTALL: `commit` is stamped by setup-infrastructure; both are bumped by `upgrade` (Phase 3).
+# `commit` is the history-independent baseline anchor (used when git history is absent, e.g. a ZIP install).
+version: 0.1.0
+commit: ""

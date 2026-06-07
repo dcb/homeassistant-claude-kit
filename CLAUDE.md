@@ -193,6 +193,17 @@ When privacy mode is active (`test -f .claude/privacy-patterns`):
 - iOS WKWebView has no `MediaSource` API — use WebRTC for mobile camera streams
 - See `dashboard/CLAUDE.md` for full dashboard development guide
 
+## Versioning & Releasing
+
+- The kit is versioned (semver) with a structured changelog. `kit-changelog.yaml` is the
+  self-describing source of truth; `CHANGELOG.md` is **rendered** from it — never hand-edit it.
+  `.kit-version` records the version an install is based on.
+- **Cut a release** with the `release` skill (producer-only; see `.claude/skills/release/SKILL.md`).
+  It curates commits → changelog entries, derives the bump, renders `CHANGELOG.md`, bumps
+  `.kit-version` + `dashboard/package.json`, and tags. Validate with `python tools/validate_changelog.py`.
+- **Upgrade an install** with the `upgrade` skill *(added in a later phase)*; until then see README "Updating".
+- Cross-tool: `AGENTS.md` mirrors this so non-Claude agents can follow the same runbooks.
+
 ## Important Notes
 
 - Use `gh` CLI for GitHub content — not `WebFetch`/`curl` (avoids rate limiting)
