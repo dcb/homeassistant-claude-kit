@@ -202,15 +202,20 @@ The dashboard is a standalone React app served as a `panel_custom` iframe. It co
 
 ## Updating
 
-Your customizations (`config/`, `dashboard/src/lib/`, `.env`) are untracked and won't conflict with upstream changes:
+The kit is versioned (see [`CHANGELOG.md`](CHANGELOG.md)). To pull later fixes and features into an
+install that has diverged from the template, run the **`upgrade` skill** in Claude Code:
 
-```bash
-git pull
-cd dashboard && npm install && npm run build && cd ..
-make deploy-dashboard
-```
+> "upgrade the kit"
 
-If the update includes new automation templates or dashboard features, re-run `setup-customize` in Claude Code to pick them up.
+It reads the structured changelog (`kit-changelog.yaml`), works out which changes are still relevant to
+*your* install, and applies them on a branch — rather than a blind `git pull`/merge that would fight your
+customizations. Your install-specific files stay untracked and out of its way: `config/` (your real HA
+config), `.env` / `dashboard/.env.local` (credentials), and `setup-state.json`. The dashboard's
+`entities.ts` / `areas.ts` ship as scaffolds and are generated for your home by `setup-customize`.
+
+> **Manual fallback** (advanced): the kit's tracked files can be updated with `git pull` from the kit
+> remote, then `cd dashboard && npm install && npm run build && cd .. && make deploy-dashboard`. Prefer
+> the `upgrade` skill — it handles divergence and won't clobber your generated `entities.ts`/`areas.ts`.
 
 ## Acknowledgments
 

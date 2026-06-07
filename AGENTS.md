@@ -53,3 +53,22 @@ Follow the patterns in `docs/system-*.md` for the relevant domain. See `CLAUDE.m
 The `dashboard/src/components/cards/` directory contains the core card set. Domain-specific cards (heating zones, solar, EV charger, boiler) live in `docs/templates/cards/` as reference implementations — copy them into `dashboard/src/` if you need them.
 
 See `dashboard/CLAUDE.md` for the full dashboard development guide.
+
+## Versioning, Releasing & Upgrading
+
+The kit is versioned with semver and a structured changelog. The source of truth is
+`kit-changelog.yaml` (self-describing — its inline `schema:` block is the contract);
+`CHANGELOG.md` is rendered from it and is never hand-edited. `.kit-version` records which kit
+version an install is based on.
+
+Two procedures are written as Claude Code skills, but their `SKILL.md` bodies are plain numbered
+runbooks any agent can follow. If you are **not** running in Claude Code (e.g. Codex), execute the
+procedure by reading and following the steps in the relevant file:
+
+- **Cut a new kit version** → follow `.claude/skills/release/SKILL.md` (+ `references/changelog-schema.md`).
+  Producer-only; runs inside the kit repo. Validate with `python tools/validate_changelog.py` before committing.
+- **Upgrade an install to a newer kit version** → follow `.claude/skills/upgrade/SKILL.md` *(added in a later
+  phase)*. Until it exists, upgrades are manual (see README "Updating").
+
+Never hand-edit `CHANGELOG.md` (regenerate from `kit-changelog.yaml`); never run `git push --tags` or push
+to an inferred remote in `release` — resolve the kit remote by URL match and confirm first.
