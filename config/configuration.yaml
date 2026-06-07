@@ -17,6 +17,13 @@ homeassistant:
 automation: !include automations.yaml
 script: !include scripts.yaml
 
+panel_custom:
+  - name: custom-dashboard-panel
+    url_path: custom-dashboard
+    sidebar_title: Dashboard
+    sidebar_icon: mdi:view-dashboard
+    module_url: /local/custom-dashboard/panel.js
+
 alexa:
   smart_home:
 
