@@ -7,6 +7,7 @@ import { Icon } from "@iconify/react";
 import type { RoomConfig } from "../../lib/areas";
 import type { AcConfig } from "../../lib/acUnits";
 import { parseNumericState } from "../../lib/format";
+import { isTrvActivelyHeating } from "../../lib/climate";
 import { IconButton } from "../controls/IconButton";
 import { Section, ToggleSwitch } from "./RoomPopupShared";
 import { ROOM_ZONE_MAP } from "../../lib/entities";
@@ -31,9 +32,10 @@ export function ClimateSection({ room, entities, climateModeEntity, nextTransiti
   const climateMode = entities[climateModeEntity]?.state ?? "Off";
   const isClimateOff = climateMode === "Off";
 
-  // Count active radiators (TRVs only — ACs shown separately)
+  // Count radiators that are *actively* heating (valve open) — not just those in "heat"
+  // mode (a TRV at a low setpoint reads "heat" with the valve closed).
   const radiators = room.climate?.filter((id) => id.includes("radiator")) ?? [];
-  const activeRadiators = radiators.filter((id) => entities[id]?.state === "heat").length;
+  const activeRadiators = radiators.filter((id) => isTrvActivelyHeating(entities[id])).length;
   const totalRadiators = radiators.length;
 
   // Current temperature and delta from target

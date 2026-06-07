@@ -1,6 +1,7 @@
 import type { HassEntities } from "home-assistant-js-websocket";
 import type { RoomConfig } from "../lib/areas";
 import { formatTemp, parseNumericState } from "../lib/format";
+import { isTrvActivelyHeating } from "../lib/climate";
 import { lightColor } from "../components/controls/LightControl";
 import { DISHWASHER_STATUS, DISHWASHER_TIME_REMAINING } from "../lib/entities";
 
@@ -160,8 +161,9 @@ export function useRoomState(room: RoomConfig, entities: HassEntities): RoomStat
   const trvs = room.climate?.filter((id) => id.includes("radiator")) ?? [];
   const acs = room.climate?.filter((id) => !id.includes("radiator")) ?? [];
 
-  // Count heating TRVs — automation sets state to "heat" when room needs heating
-  const heatingTrvCount = trvs.filter((id) => entities[id]?.state === "heat").length;
+  // Count TRVs that are *actively* heating (valve open / calling for heat) — not just
+  // those in "heat" mode (a TRV at a low setpoint reads "heat" with the valve closed).
+  const heatingTrvCount = trvs.filter((id) => isTrvActivelyHeating(entities[id])).length;
 
   // Active AC — prefer hvac_action, fall back to state
   const activeAcEntity = acs
