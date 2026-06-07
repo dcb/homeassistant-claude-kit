@@ -317,3 +317,80 @@ export const TEMP_PRESETS_CONFIG: TempPresetsConfig = {
   ],
   coolingPresets: [],
 };
+
+// ── Energy view ──────────────────────────────────────────────────────────────
+
+/** Entity ID for Forecast.Solar power sensor. Empty = no integration configured. */
+export const SOLAR_FORECAST_NOW = ""; // No Forecast.Solar integration configured
+
+export interface EnergyConfig {
+  solarPower: string;
+  loadPower: string;
+  gridNow: string;
+  batteryNow: string;
+  batteryCharge: string;
+  batteryBackup: string;
+  gridStatus: string;
+  chargerPowerImport: string;
+  chargerStatus: string;
+}
+
+export interface EvStatusConfig {
+  carLabel: string;
+  evBattery: string;
+  evRange: string;
+  evCharging: string;   // binary_sensor
+  evCharger: string;    // binary_sensor (cable)
+  evChargerPower: string;
+  evChargeLimit: string;
+  evTimeToFull: string;
+  evEnergyAdded: string;
+  evScheduledCharging: string;
+  evChargeSwitch: string;  // switch entity for on/off
+}
+
+export interface SolarChartConfig {
+  solarPower: string;
+  loadPower: string;
+  gridPower: string;
+  chargerPowerImport: string;
+  chargerPowerOffered: string;
+  chargerStatus: string;
+  electricityPriceGrid?: number;
+  electricityPriceExport?: number;
+}
+
+export const ENERGY_CONFIG: EnergyConfig = {
+  solarPower:         "sensor.powerwall_solar_now",
+  loadPower:          "sensor.powerwall_load_now",
+  gridNow:            "sensor.powerwall_site_now",
+  batteryNow:         "sensor.powerwall_battery_now",
+  batteryCharge:      "sensor.powerwall_charge",
+  batteryBackup:      "sensor.powerwall_backup_reserve",
+  gridStatus:         "binary_sensor.grid_status",
+  chargerPowerImport: "sensor.asterix_charger_power",
+  chargerStatus:      "binary_sensor.asterix_charging",
+};
+
+export const EV_STATUS_CONFIG: EvStatusConfig = {
+  carLabel:            "Asterix",
+  evBattery:           "sensor.asterix_battery",
+  evRange:             "sensor.asterix_range",
+  evCharging:          "binary_sensor.asterix_charging",
+  evCharger:           "binary_sensor.asterix_charger",
+  evChargerPower:      "sensor.asterix_charger_power",
+  evChargeLimit:       "number.asterix_charge_limit",
+  evTimeToFull:        "sensor.asterix_time_charge_complete",
+  evEnergyAdded:       "sensor.asterix_energy_added",
+  evScheduledCharging: "binary_sensor.asterix_scheduled_charging",
+  evChargeSwitch:      "switch.asterix_charger",
+};
+
+export const SOLAR_CHART_CONFIG: SolarChartConfig = {
+  solarPower:         "sensor.powerwall_solar_now",
+  loadPower:          "sensor.powerwall_load_now",
+  gridPower:          "sensor.powerwall_site_now",
+  chargerPowerImport: "sensor.asterix_charger_power",
+  chargerPowerOffered:"",
+  chargerStatus:      "binary_sensor.asterix_charging",
+};
