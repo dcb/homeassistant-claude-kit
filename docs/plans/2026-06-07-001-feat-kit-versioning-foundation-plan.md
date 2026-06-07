@@ -180,17 +180,17 @@ changes:
 
 ## Acceptance Criteria
 ### Functional
-- [ ] `v0.1.0` tag on the confirmed SHA, pushed; created **before** the R1 commit.
-- [ ] R1: `lib/` ignore narrowed (`!dashboard/src/lib/`); **all** of `dashboard/src/lib/` tracked incl. `adapters/` and the `entities.ts`/`areas.ts` scaffolds; `git check-ignore -v` confirms the un-ignored set + Python paths still ignored; **a fresh `git clone` compiles with NO setup step** (`npm install && npx tsc -b --noEmit`).
-- [ ] `.kit-version` (`version: 0.1.0`, `commit`) committed; producer/consumer role guard documented.
-- [ ] `kit-changelog.yaml` self-describing (inline `schema:` + `schema_version`) with the seed `v0.1.0` entry; `tools/validate_changelog.py` passes.
-- [ ] Hand-written `CHANGELOG.md` seed present.
-- [ ] `release` skill: house style; dry-run on a throwaway commit yields a valid entry, correct bump (feature→MINOR), KaC render, signed tag — **without pushing**; intent-contract gate flags thin commits; safe-push uses explicit remote + `--repo`; pre-existing-tag guard.
-- [ ] `setup-infrastructure` Step 10 stamps `.kit-version` idempotently and does not rewrite `version:` in the kit repo.
-- [ ] Docs: README "Updating" replaced + "lib/ untracked" claim corrected; **AGENTS.md runbook lets a non-Claude agent locate + execute `release`**.
+- [~] `v0.1.0` tag on the confirmed SHA (`2fbf556`), created **before** the R1 commit — **created locally; push pending maintainer confirmation**.
+- [x] R1: `lib/` ignore narrowed (`!dashboard/src/lib/`); **all** of `dashboard/src/lib/` tracked incl. `adapters/` and the `entities.ts`/`areas.ts` scaffolds; `git check-ignore -v` confirmed un-ignored set + Python paths still ignored; **fresh `git clone` compiles with NO setup step** (`tsc -b --noEmit` exit 0). ✓ verified
+- [x] `.kit-version` (`version: 0.1.0`, `commit`) committed; producer/consumer role guard (Step 10 writes only `commit`).
+- [x] `kit-changelog.yaml` self-describing (inline `schema:` + `schema_version`) with the seed `v0.1.0` entry; `tools/validate_changelog.py` passes (✓ + invalid-fixture failures verified).
+- [x] Hand-written `CHANGELOG.md` seed present.
+- [x] `release` skill: house style; intent-contract gate; safe-push (explicit remote + `--repo`); pre-existing-tag guard; idempotent render-check + correctness invariants encoded. **Full release dry-run = Phase 2** (first real run; component deps verified: validator, tag, clone-compiles).
+- [x] `setup-infrastructure` Step 10 stamps `.kit-version` idempotently, ZIP-safe, never rewrites `version:` (✓ logic tested: stamp / re-run no-op / no-git → empty, exit 0).
+- [x] Docs: README "Updating" replaced + "lib/ untracked" claim corrected; **AGENTS.md runbook lets a non-Claude agent locate + execute `release`**; CLAUDE.md pointer added.
 ### Quality gates
-- [ ] All skills follow verified house style; `release` is idempotent per version (re-run on a released version = no-op).
-- [ ] `release` bumps `dashboard/package.json` version in the same release commit (no orphan `0.0.0`).
+- [x] All skills follow verified house style; `release` is idempotent per version (encoded: empty-range/already-released no-op + append-dedup).
+- [x] `release` bumps `dashboard/package.json` version in the same release commit (specified in Step 6).
 
 ## Risk Analysis & Mitigation
 - **R1 — kit non-buildable from clean clone / `lib/` blind to transport (HIGH) — fix in Phase 1.** See Component 7. Reconcile the README contract.
