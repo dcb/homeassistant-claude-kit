@@ -1,0 +1,374 @@
+recipe_import_from_text:
+  alias: Import recipe from pasted text
+  mode: parallel
+  max: 3
+  trace:
+    stored_traces: 0
+  fields:
+    text:
+      required: true
+      selector: { text: { multiline: true } }
+    provider:
+      required: false
+      selector: { select: { options: [claude, openai] } }
+    source_url:
+      required: false
+      selector: { text: {} }
+    # Explicit image URL pasted by the user. Takes priority over any image URL
+    # the LLM extracts from the recipe text. Empty → fall back to LLM extraction.
+    image_url:
+      required: false
+      selector: { text: {} }
+  sequence:
+    - variables:
+        chosen_provider: "{{ provider | default(states('input_select.recipe_import_provider')) }}"
+    # Single LLM call (no retry — script-level `stop:` can't exit just the repeat loop).
+    # User can manually retry from the UI on transient failure.
+    - choose:
+        - conditions:
+            - condition: template
+              value_template: "{{ chosen_provider == 'claude' }}"
+          sequence:
+            - action: rest_command.llm_parse_recipe_claude
+              data:
+                text: "{{ text }}"
+                source_url: "{{ source_url | default('') }}"
+              response_variable: llm_response
+              continue_on_error: true
+            - variables:
+                llm_status: "{{ llm_response.status | int(0) }}"
+                succeeded: "{{ llm_status == 200 }}"
+                recipe_obj: >-
+                  {{ (llm_response.content.content[0].input
+                      if succeeded else {}) }}
+      default:
+        - action: rest_command.llm_parse_recipe_openai
+          data:
+            text: "{{ text }}"
+            source_url: "{{ source_url | default('') }}"
+          response_variable: llm_response
+          continue_on_error: true
+        - variables:
+            llm_status: "{{ llm_response.status | int(0) }}"
+            succeeded: "{{ llm_status == 200 }}"
+            recipe_obj: >-
+              {{ (llm_response.content.choices[0].message.content | from_json
+                  if succeeded else {}) }}
+    - if: "{{ not succeeded }}"
+      then:
+        - variables:
+            err:
+              error: "llm_{{ llm_status }}"
+              details: "{{ llm_response.content | default('') }}"
+        - stop: "llm failed"
+          response_variable: err
+    - if: "{{ not recipe_obj.name or not recipe_obj.recipeIngredient or not recipe_obj.recipeInstructions }}"
+      then:
+        - variables:
+            err:
+              error: "invalid_shape"
+              raw: "{{ recipe_obj }}"
+        - stop: "invalid_llm_output"
+          response_variable: err
+    - action: rest_command.mealie_create_recipe
+      data:
+        name: "{{ recipe_obj.name }}"
+      response_variable: created
+      continue_on_error: true
+    - if: "{{ (created.status | int(0)) not in [200, 201] }}"
+      then:
+        - variables:
+            err:
+              error: "mealie_create_{{ created.status | int(0) }}"
+              details: "{{ created.content | default('') }}"
+        - stop: "mealie create failed"
+          response_variable: err
+    - variables:
+        new_slug: "{{ created.content }}"
+    # Transform LLM's structured ingredients into Mealie's expected RecipeIngredient
+    # objects. Mealie's `unit` and `food` fields are entity refs (require IDs in the
+    # Mealie units/foods tables), so we don't try to populate them — we keep the
+    # unit/food strings inside the `note` field. The dashboard reconstructs the
+    # scaled display from `quantity` + `note`.
+    #
+    # Step timers from the LLM ride along in extras.pendingCookTimers as a parallel
+    # array (one entry per step position). The dashboard migrates them to
+    # extras.cookTimers keyed by step ID on first save in the review form —
+    # we don't have Mealie's auto-assigned IDs here yet.
+    - action: rest_command.mealie_update_recipe
+      data:
+        slug: "{{ new_slug }}"
+        recipe_json: >-
+          {# Mealie's `extras` field is a flat string-to-string KV table at the
+             storage layer — nested objects/arrays as values trigger a SQL
+             ProgrammingError (the OpenAPI schema is misleading about this).
+             So everything we stash there must be JSON-stringified first; the
+             dashboard parses on read. #}
+          {%- set ns = namespace(ing=[], steps=[], pending={}, nutr={}, extras={}) -%}
+          {# Build nutrition dict from LLM's per-serving values. Mealie's
+             nutrition object takes string fields; missing values stay absent. #}
+          {%- if recipe_obj.caloriesPerServing is not none -%}
+            {%- set ns.nutr = ns.nutr | combine({'calories': recipe_obj.caloriesPerServing | string}) -%}
+          {%- endif -%}
+          {%- if recipe_obj.proteinPerServing is not none -%}
+            {%- set ns.nutr = ns.nutr | combine({'proteinContent': recipe_obj.proteinPerServing | string}) -%}
+          {%- endif -%}
+          {%- if recipe_obj.carbsPerServing is not none -%}
+            {%- set ns.nutr = ns.nutr | combine({'carbohydrateContent': recipe_obj.carbsPerServing | string}) -%}
+          {%- endif -%}
+          {%- if recipe_obj.fatPerServing is not none -%}
+            {%- set ns.nutr = ns.nutr | combine({'fatContent': recipe_obj.fatPerServing | string}) -%}
+          {%- endif -%}
+          {%- for s in recipe_obj.recipeIngredient -%}
+            {%- set bits = [] -%}
+            {%- if s.unit -%}{%- set bits = bits + [s.unit] -%}{%- endif -%}
+            {%- if s.food -%}{%- set bits = bits + [s.food] -%}{%- endif -%}
+            {%- set base = bits | join(' ') -%}
+            {%- if s.note and base -%}{%- set joined = base ~ ', ' ~ s.note -%}
+            {%- elif s.note -%}{%- set joined = s.note -%}
+            {%- else -%}{%- set joined = base -%}
+            {%- endif -%}
+            {%- set ns.ing = ns.ing + [{
+              'display': s.display,
+              'originalText': s.display,
+              'note': joined,
+              'quantity': s.quantity,
+            }] -%}
+          {%- endfor -%}
+          {%- for st in (recipe_obj.recipeInstructions | default([])) -%}
+            {%- set ns.steps = ns.steps + [{'text': st.text, 'ingredient_references': []}] -%}
+            {%- set step_timers = st.timers | default([]) -%}
+            {%- if step_timers | length > 0 -%}
+              {# `combine` is HA's dict-merge filter — standard Jinja has no native dict-append. #}
+              {%- set ns.pending = ns.pending | combine({loop.index0 | string: step_timers}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- if ns.pending | length > 0 -%}
+            {%- set ns.extras = {'pendingCookTimers': ns.pending | to_json} -%}
+          {%- endif -%}
+          {{ {
+            'name': recipe_obj.name,
+            'description': recipe_obj.description | default(''),
+            'recipeYield': recipe_obj.recipeYield | default(none),
+            'recipeServings': recipe_obj.recipeServings | default(none),
+            'recipeIngredient': ns.ing,
+            'recipeInstructions': ns.steps,
+            'totalTime': recipe_obj.totalTime | default(none),
+            'prepTime': recipe_obj.prepTime | default(none),
+            'performTime': recipe_obj.performTime | default(none),
+            'nutrition': ns.nutr,
+            'extras': ns.extras,
+          } | to_json }}
+      response_variable: updated
+      continue_on_error: true
+    - if: "{{ (updated.status | int(0)) not in [200, 201] }}"
+      then:
+        - if: "{{ states('input_select.recipe_import_cleanup_policy') == 'delete' }}"
+          then:
+            - action: rest_command.mealie_delete_recipe
+              data:
+                slug: "{{ new_slug }}"
+              continue_on_error: true
+        - variables:
+            err:
+              error: "mealie_update_{{ updated.status | int(0) }}"
+              slug: "{{ new_slug }}"
+              cleanup: "{{ states('input_select.recipe_import_cleanup_policy') }}"
+              details: "{{ updated.content | default('') }}"
+        - stop: "mealie update failed"
+          response_variable: err
+    # Optional: pull an image URL from the LLM output. We download HA-side
+    # (stdlib urllib = HTTP/1.1) and upload via Mealie's reliable PUT
+    # /api/recipes/{slug}/image multipart endpoint. Mealie's own POST scrape
+    # endpoint is unreliable on HTTP/2-fussy CDNs — leaves phantom hashes.
+    # Best-effort: a failed image fetch must NOT fail the whole import.
+    #
+    # We capture the shell_command result and log non-zero return codes via
+    # system_log — `continue_on_error: true` would otherwise swallow them
+    # silently, leaving "image went missing" with no trail.
+    #
+    # Image source priority: the explicit `image_url` field (user pasted it in
+    # the dashboard's Image URL box) wins; otherwise fall back to whatever URL
+    # the LLM pulled out of the recipe text. The outcome is threaded into the
+    # response so the dashboard can tell the user the image failed instead of
+    # silently reporting success.
+    - variables:
+        image_src: >-
+          {{ image_url | default('') if (image_url | default('')) | length > 0
+             else (recipe_obj.imageUrl | default('')) }}
+        image_requested: "{{ (image_src | length) > 0 }}"
+        image_ok: false
+        image_error: ""
+    - if: "{{ image_requested }}"
+      then:
+        - action: shell_command.mealie_upload_image_from_url
+          data:
+            slug: "{{ new_slug }}"
+            image_url: "{{ image_src }}"
+          response_variable: img_upload
+          continue_on_error: true
+        - variables:
+            image_ok: "{{ (img_upload.returncode | default(-1)) == 0 }}"
+            image_error: >-
+              {{ '' if (img_upload.returncode | default(-1)) == 0
+                 else ('rc=' ~ (img_upload.returncode | default('?')) ~ ' '
+                       ~ (img_upload.stderr | default('') | truncate(180, true, ''))) }}
+        - if: "{{ not image_ok }}"
+          then:
+            - action: system_log.write
+              data:
+                level: warning
+                logger: recipe_import
+                message: >-
+                  Image upload failed for slug={{ new_slug }} src={{ image_src }} {{ image_error }}
+    - variables:
+        result:
+          slug: "{{ new_slug }}"
+          name: "{{ recipe_obj.name }}"
+          provider: "{{ chosen_provider }}"
+          image_requested: "{{ image_requested }}"
+          image_ok: "{{ image_ok }}"
+          image_error: "{{ image_error }}"
+    - stop: "imported"
+      response_variable: result
+
+recipe_shopping_item_check:
+  alias: Toggle shopping item checked
+  mode: queued
+  fields:
+    item_id: { required: true, selector: { text: {} } }
+    checked: { required: true, selector: { boolean: {} } }
+  sequence:
+    - action: rest_command.mealie_update_shopping_item
+      data:
+        item_id: "{{ item_id }}"
+        body: '{ "checked": {{ checked | tojson }} }'
+
+recipe_shopping_item_add:
+  alias: Add an ad-hoc shopping item
+  mode: queued
+  fields:
+    list_id: { required: true, selector: { text: {} } }
+    note:    { required: true, selector: { text: {} } }
+    quantity: { required: false, selector: { number: { min: 0, max: 999, step: 0.5 } } }
+  sequence:
+    - action: rest_command.mealie_post_shopping_item
+      data:
+        body: >-
+          { "shoppingListId": "{{ list_id }}", "note": "{{ note | replace('"','\\"') }}",
+            "quantity": {{ quantity | default(1) }}, "isFood": false }
+
+recipe_shopping_add_recipe:
+  alias: Add a recipe's ingredients to a shopping list
+  mode: queued
+  fields:
+    list_id:   { required: true, selector: { text: {} } }
+    recipe_id: { required: true, selector: { text: {} } }
+  sequence:
+    - action: rest_command.mealie_shopping_add_recipe
+      data:
+        list_id: "{{ list_id }}"
+        recipe_id: "{{ recipe_id }}"
+
+recipe_mealplan_remove:
+  alias: Remove a meal-plan entry
+  mode: queued
+  fields:
+    entry_id: { required: true, selector: { text: {} } }
+  sequence:
+    - action: rest_command.mealie_delete_mealplan_entry
+      data:
+        entry_id: "{{ entry_id }}"
+
+recipe_update:
+  alias: Update a recipe by slug
+  mode: queued
+  fields:
+    slug: { required: true, selector: { text: {} } }
+    recipe_json: { required: true, selector: { text: { multiline: true } } }
+  sequence:
+    - action: rest_command.mealie_update_recipe
+      data:
+        slug: "{{ slug }}"
+        recipe_json: "{{ recipe_json }}"
+
+recipe_delete:
+  alias: Delete a recipe by slug
+  mode: queued
+  fields:
+    slug: { required: true, selector: { text: {} } }
+  sequence:
+    - action: rest_command.mealie_delete_recipe
+      data:
+        slug: "{{ slug }}"
+
+# Attach an image to an existing recipe by fetching a URL HA-side (stdlib urllib,
+# HTTP/1.1) and uploading via Mealie's reliable PUT — the same proven path the
+# text-import uses. Lets the dashboard's edit form offer "paste an image URL" as
+# an alternative to file upload. Returns {ok, error} so the UI can report failure.
+recipe_image_from_url:
+  alias: "Recipe: set image from URL"
+  mode: queued
+  fields:
+    slug: { required: true, selector: { text: {} } }
+    image_url: { required: true, selector: { text: {} } }
+  sequence:
+    - action: shell_command.mealie_upload_image_from_url
+      data:
+        slug: "{{ slug }}"
+        image_url: "{{ image_url }}"
+      response_variable: img_upload
+      continue_on_error: true
+    - variables:
+        result:
+          ok: "{{ (img_upload.returncode | default(-1)) == 0 }}"
+          error: >-
+            {{ '' if (img_upload.returncode | default(-1)) == 0
+               else ('rc=' ~ (img_upload.returncode | default('?')) ~ ' '
+                     ~ (img_upload.stderr | default('') | truncate(180, true, ''))) }}
+    - stop: "done"
+      response_variable: result
+
+# Background cook-mode timer. Fires a mobile notification when the duration elapses,
+# so it works even with the dashboard closed (PWA-only timers can't do this — the
+# whole reason Mealie removed its built-in timer in PR #4857).
+#
+# `notify_service` targets the phone of the *current HA user* who started the
+# timer — the dashboard resolves it client-side from `useUser().id`. Empty
+# notify_service is a no-op (local beep is the fallback).
+#
+# Parallel mode + high max because a single cook session can stack a handful of
+# timers (preheat + boil + rest). Traces disabled — these are short-lived and
+# would otherwise flood the trace log.
+recipe_timer:
+  alias: "Recipe: cook timer"
+  mode: parallel
+  max: 50
+  trace:
+    stored_traces: 0
+  fields:
+    label:
+      required: true
+      selector: { text: {} }
+    duration_sec:
+      required: true
+      selector: { number: { min: 1, max: 86400, step: 1, unit_of_measurement: "s" } }
+    notify_service:
+      required: false
+      description: "Full notify service id (e.g. notify.YOUR_PHONE). Empty → no notification."
+      selector: { text: {} }
+  sequence:
+    - delay:
+        seconds: "{{ duration_sec | int }}"
+    - if: "{{ (notify_service | default('')) | length > 0 }}"
+      then:
+        - action: "{{ notify_service }}"
+          data:
+            title: "Cook timer"
+            message: "{{ label }} — done"
+            data:
+              push:
+                interruption-level: "time-sensitive"
+                sound:
+                  name: default
+                  critical: 1
