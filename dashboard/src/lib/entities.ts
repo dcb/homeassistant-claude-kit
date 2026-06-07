@@ -169,21 +169,24 @@ export const ROOM_ZONE_MAP: Record<string, ZoneDescriptor> = {
     sensorId:        "sensor.downstairs_temperature",
     overrideBoolean: "input_boolean.zone_override_downstairs",
     overrideTarget:  "input_number.zone_target_downstairs",
-    targetId:        "input_number.zone_effective_target_downstairs",
+    targetId:        "sensor.zone_effective_target_downstairs",
+    acEntity:        "climate.downstairs",
   },
   master_bedroom: {
     name: "Master Bedroom",
     sensorId:        "sensor.master_bedroom_temperature",
     overrideBoolean: "input_boolean.zone_override_master",
     overrideTarget:  "input_number.zone_target_master",
-    targetId:        "input_number.zone_effective_target_master",
+    targetId:        "sensor.zone_effective_target_master_bed",
+    acEntity:        "climate.master_bedroom",
   },
   music_room: {
     name: "Family Room",
     sensorId:        "sensor.family_room_temperature",
     overrideBoolean: "input_boolean.zone_override_family",
     overrideTarget:  "input_number.zone_target_family",
-    targetId:        "input_number.zone_effective_target_family",
+    targetId:        "sensor.zone_effective_target_family_room",
+    acEntity:        "climate.family_room",
   },
 };
 

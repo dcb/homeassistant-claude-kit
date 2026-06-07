@@ -127,3 +127,173 @@ template:
         unique_id: current_weather_condition
         state: >
           {{ hourly_data['weather.dream_home'].forecast[0].condition }}
+
+  - sensor:
+      - name: "Zone Effective Target Downstairs"
+        unique_id: zone_effective_target_downstairs
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state: >
+          {% if is_state('input_boolean.zone_override_downstairs', 'on') %}
+            {{ states('input_number.zone_target_downstairs') | float(70) }}
+          {% else %}
+            {{ state_attr('climate.downstairs', 'temperature') | default(70) }}
+          {% endif %}
+
+      - name: "Zone Effective Target Master Bed"
+        unique_id: zone_effective_target_master
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state: >
+          {% if is_state('input_boolean.zone_override_master', 'on') %}
+            {{ states('input_number.zone_target_master') | float(70) }}
+          {% else %}
+            {{ state_attr('climate.master_bedroom', 'temperature') | default(70) }}
+          {% endif %}
+
+      - name: "Zone Effective Target Family Room"
+        unique_id: zone_effective_target_family
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state: >
+          {% if is_state('input_boolean.zone_override_family', 'on') %}
+            {{ states('input_number.zone_target_family') | float(70) }}
+          {% else %}
+            {{ state_attr('climate.family_room', 'temperature') | default(70) }}
+          {% endif %}
+
+# ── Dashboard Input Helpers ──────────────────────────────────────────────────
+
+input_boolean:
+  night_mode:
+    name: Night Mode
+    icon: mdi:weather-night
+  movie_mode:
+    name: Movie Mode
+    icon: mdi:movie
+  work_mode:
+    name: Work Mode
+    icon: mdi:briefcase
+  away_mode:
+    name: Away Mode
+    icon: mdi:home-export-outline
+  night_alerts:
+    name: Night Alerts
+    icon: mdi:bell-sleep
+  zone_override_downstairs:
+    name: Zone Override Downstairs
+    icon: mdi:thermostat
+  zone_override_master:
+    name: Zone Override Master Bed
+    icon: mdi:thermostat
+  zone_override_family:
+    name: Zone Override Family Room
+    icon: mdi:thermostat
+
+input_select:
+  climate_mode:
+    name: Climate Mode
+    options:
+      - Heating
+      - Cooling
+      - "Off"
+    initial: "Off"
+    icon: mdi:hvac
+  time_of_day:
+    name: Time of Day
+    options:
+      - morning
+      - day
+      - evening
+      - night
+    initial: day
+    icon: mdi:clock-time-four-outline
+
+input_datetime:
+  next_climate_transition:
+    name: Next Climate Transition
+    has_date: true
+    has_time: true
+    icon: mdi:calendar-clock
+
+input_number:
+  timeout_motion_normal:
+    name: Motion Timeout Normal
+    min: 10
+    max: 600
+    step: 10
+    initial: 120
+    unit_of_measurement: s
+    icon: mdi:timer-outline
+  timeout_motion_normal_long:
+    name: Motion Timeout Normal (Long)
+    min: 30
+    max: 1800
+    step: 30
+    initial: 300
+    unit_of_measurement: s
+    icon: mdi:timer-outline
+  timeout_motion_night:
+    name: Motion Timeout Night
+    min: 5
+    max: 300
+    step: 5
+    initial: 30
+    unit_of_measurement: s
+    icon: mdi:timer-outline
+  timeout_motion_night_short:
+    name: Motion Timeout Night (Short)
+    min: 5
+    max: 120
+    step: 5
+    initial: 15
+    unit_of_measurement: s
+    icon: mdi:timer-outline
+  timeout_motion_movie:
+    name: Motion Timeout Movie
+    min: 60
+    max: 1800
+    step: 60
+    initial: 600
+    unit_of_measurement: s
+    icon: mdi:timer-outline
+  transition_on:
+    name: Light Transition On
+    min: 0
+    max: 5000
+    step: 100
+    initial: 800
+    unit_of_measurement: ms
+    icon: mdi:transition
+  transition_off:
+    name: Light Transition Off
+    min: 0
+    max: 10000
+    step: 100
+    initial: 3000
+    unit_of_measurement: ms
+    icon: mdi:transition
+  zone_target_downstairs:
+    name: Zone Target Temp Downstairs
+    min: 60
+    max: 85
+    step: 0.5
+    initial: 70
+    unit_of_measurement: "°F"
+    icon: mdi:thermometer
+  zone_target_master:
+    name: Zone Target Temp Master Bed
+    min: 60
+    max: 85
+    step: 0.5
+    initial: 70
+    unit_of_measurement: "°F"
+    icon: mdi:thermometer
+  zone_target_family:
+    name: Zone Target Temp Family Room
+    min: 60
+    max: 85
+    step: 0.5
+    initial: 70
+    unit_of_measurement: "°F"
+    icon: mdi:thermometer
