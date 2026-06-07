@@ -349,6 +349,16 @@ export interface EvStatusConfig {
   evChargeSwitch: string;  // switch entity for on/off
 }
 
+export interface WallConnectorConfig {
+  status: string;          // sensor: ready/charging/not_connected/etc.
+  vehicleConnected: string; // binary_sensor
+  totalPower: string;       // sensor kW
+  sessionEnergy: string;   // sensor kWh
+  phaseACurrent: string;   // sensor A
+  phaseBCurrent: string;
+  phaseCurrent: string;
+}
+
 export interface SolarChartConfig {
   solarPower: string;
   loadPower: string;
@@ -384,6 +394,30 @@ export const EV_STATUS_CONFIG: EvStatusConfig = {
   evEnergyAdded:       "sensor.asterix_energy_added",
   evScheduledCharging: "binary_sensor.asterix_scheduled_charging",
   evChargeSwitch:      "switch.asterix_charger",
+};
+
+export const OBELIX_STATUS_CONFIG: EvStatusConfig = {
+  carLabel:            "Obelix",
+  evBattery:           "sensor.sky_battery",
+  evRange:             "sensor.sky_range",
+  evCharging:          "binary_sensor.sky_charging",
+  evCharger:           "binary_sensor.sky_charger",
+  evChargerPower:      "sensor.sky_charger_power",
+  evChargeLimit:       "number.sky_charge_limit",
+  evTimeToFull:        "sensor.sky_time_charge_complete",
+  evEnergyAdded:       "sensor.sky_energy_added",
+  evScheduledCharging: "binary_sensor.sky_scheduled_charging",
+  evChargeSwitch:      "switch.sky_charger",
+};
+
+export const WALL_CONNECTOR_CONFIG: WallConnectorConfig = {
+  status:           "sensor.tesla_wall_connector_status",
+  vehicleConnected: "binary_sensor.tesla_wall_connector_vehicle_connected",
+  totalPower:       "sensor.tesla_wall_connector_total_power",
+  sessionEnergy:    "sensor.tesla_wall_connector_session_energy",
+  phaseACurrent:    "sensor.tesla_wall_connector_phase_a_current",
+  phaseBCurrent:    "sensor.tesla_wall_connector_phase_b_current",
+  phaseCurrent:     "sensor.tesla_wall_connector_phase_c_current",
 };
 
 export const SOLAR_CHART_CONFIG: SolarChartConfig = {
