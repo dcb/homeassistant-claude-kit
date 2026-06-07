@@ -105,6 +105,8 @@ Some automation templates and dashboard features depend on additional HA integra
 | [go2rtc](https://github.com/AlexxIT/go2rtc) | Camera streams on dashboard (desktop MSE) | HA Add-on or standalone |
 | [WebRTC Camera](https://github.com/AlexxIT/WebRTC) | Camera streams on mobile/iOS (WebRTC) | HACS |
 | [Forecast.Solar](https://www.home-assistant.io/integrations/forecast_solar/) | Energy template (solar production forecast) | HA built-in integration |
+| A valve controller (Hydrawise / OpenSprinkler / Rachio / …) | Irrigation view + template (per-zone scheduling) | HACS or built-in, per controller |
+| [Mealie](https://mealie.io/) + an LLM API key | Recipes optional feature (`docs/templates/recipes/`) | HA Add-on + the official Mealie integration |
 | `panel_custom` | Dashboard deployment | HA built-in — configured automatically by `make deploy-dashboard` |
 | [Custom Sidebar](https://github.com/Villhellm/custom-sidebar) | Making the dashboard the default view | HACS |
 
@@ -247,7 +249,7 @@ Copy the template files and fill in your entity IDs by hand. See the inline comm
 
 ### Step 8: Select automation domains
 
-Claude presents a checklist of automation domains (motion lights, climate, energy, health, etc.) and copies the selected templates to `config/automations/`, substituting your entity IDs for the `your_*` placeholders.
+Claude presents a checklist of automation domains (motion lights, climate, energy, health, irrigation, etc.) and copies the selected templates to `config/automations/`, substituting your entity IDs for the `your_*` placeholders. The optional **recipes** feature is set up separately — see `docs/templates/recipes/README.md`.
 
 <details>
 <summary>Do it manually</summary>
@@ -319,3 +321,6 @@ Setup complete? Learn how to use the kit effectively:
 
 - **[Prompting Guide](PROMPTING-GUIDE.md)** — from simple tasks to complex automations, with examples
 - **[README](README.md)** — project overview, architecture, available commands
+- **[CHANGELOG](CHANGELOG.md)** — what's in each kit version
+
+**Staying current:** the kit is versioned. When a newer version ships, say **"upgrade the kit"** in Claude Code — the `upgrade` skill pulls in the changes still relevant to your install (on a work branch, never a blind merge). Setup stamps `.kit-version` so the upgrade knows where you started. See [Updating](README.md#updating).

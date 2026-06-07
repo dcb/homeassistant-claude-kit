@@ -90,6 +90,7 @@ Templates in `docs/templates/config/` -- copied and customized during setup.
 | Health | `health.yaml` | Integration watchdogs with retry, stale sensors, battery alerts |
 | AC | `ac.yaml` | Solar-driven AC heating, manual mode bypass with auto-revert |
 | Appliance | `appliance.yaml` | WiFi appliance state machine, cycle tracking, solar reminders |
+| Irrigation | `irrigation.yaml` | Per-zone scheduling with front/back groups, weather + seasonal skip, run history |
 
 ### Dashboard
 
@@ -107,6 +108,7 @@ React 19 + TypeScript + Tailwind v4, deployed as an HA `panel_custom` via `make 
 - Bottom-sheet popups with light sliders, climate controls, media players
 - Camera streams (MSE on desktop, WebRTC on mobile/iOS) with snapshot history
 - EV charger card with solar/fast/manual modes and charging cost breakdown
+- Irrigation view with per-zone scheduling, weather/seasonal skip, a per-zone settings popup, and run history
 - Unified control system with 4-phase state machine: debounce, inflight tracking, post-confirmation hold
 
 See [dashboard/CLAUDE.md](dashboard/CLAUDE.md) for the full development guide.
@@ -148,6 +150,25 @@ entity-rename   # Discover → propose → approve → execute → verify
 
 Uses `ha-ws` (WebSocket API via SSH) for renames, then updates all YAML and TypeScript references automatically. Tracks every rename in `entity-renames.json` for rollback safety.
 
+### Recipes (optional)
+
+A full meal-planning feature built on the [Mealie](https://mealie.io/) add-on, shipped as an **optional template** in `docs/templates/recipes/` (it requires Mealie + an LLM API key, so it's opt-in rather than core):
+
+- Recipe library with search, recipe detail, and a full-screen **cook mode** (per-step timers + screen wake lock)
+- Weekly meal plan, shopping list, and a "tonight's dinner" card on the Home view
+- **Paste-to-import**: drop in any recipe text/URL and an LLM extracts a structured recipe — ingredients with unit conversion, per-serving nutrition, and step timers — straight into Mealie
+
+`docs/templates/recipes/README.md` has the full setup guide (prerequisites, the dashboard→script→LLM→Mealie dependency chain, and 8 install steps).
+
+### Versioning & Upgrades
+
+The kit is versioned with semver and a structured, agent-readable changelog ([`CHANGELOG.md`](CHANGELOG.md), rendered from `kit-changelog.yaml`). Two skills manage the lifecycle:
+
+- **`release`** (producer) — curates commits since the last tag into changelog entries, derives the version bump, renders `CHANGELOG.md`, and cuts a tagged GitHub release.
+- **`upgrade`** (consumer) — pulls a newer kit version into your *diverged* install, applying only the changes still relevant to you (it checks each change against your code), on a work branch — never a blind merge. See [Updating](#updating).
+
+![latest release](https://img.shields.io/github/v/release/dcb/homeassistant-claude-kit?label=release)
+
 ### Institutional Knowledge
 
 34 solution docs in `docs/solutions/` covering common HA pitfalls: Jinja2 scoping bugs, watchdog patterns, automation mode traps, dashboard timing issues, API gotchas, and more. These are automatically surfaced by the planning workflow to prevent repeating past mistakes.
@@ -163,17 +184,20 @@ dashboard/                 # React 19 custom panel
   src/components/          # Cards, controls, popups, layout
   src/hooks/               # useHistory, useWeatherForecast, useGo2RtcStream
   src/lib/                 # entities.ts, areas.ts, control hooks
-  src/views/               # Home, Climate, Energy, Security, Settings, Health
+  src/views/               # Home, Climate, Energy, Irrigation, Security, Settings, Health
 docs/
   templates/config/        # Automation YAML templates
+  templates/recipes/       # Optional Mealie recipes feature (dashboard + config + guide)
   solutions/               # 34 debugging lessons and patterns
   system-*.md              # System documentation (always current)
   brainstorms/             # Feature exploration documents
   plans/                   # Implementation plans
-tools/                     # Validation and entity management scripts
+tools/                     # Validation and entity management scripts (incl. validate_changelog.py)
 .claude/
-  skills/                  # AI skills (setup-infrastructure, setup-customize, entity-rename)
+  skills/                  # AI skills (setup-infrastructure, setup-customize, entity-rename, release, upgrade)
   hooks/                   # Pre/post tool-use validation hooks
+kit-changelog.yaml         # Structured changelog (source of truth) → renders CHANGELOG.md
+.kit-version               # Which kit version this install is based on
 Makefile                   # pull, push, validate, deploy-dashboard
 ```
 
@@ -216,6 +240,10 @@ config), `.env` / `dashboard/.env.local` (credentials), and `setup-state.json`. 
 > **Manual fallback** (advanced): the kit's tracked files can be updated with `git pull` from the kit
 > remote, then `cd dashboard && npm install && npm run build && cd .. && make deploy-dashboard`. Prefer
 > the `upgrade` skill — it handles divergence and won't clobber your generated `entities.ts`/`areas.ts`.
+
+> **First upgrade:** the `upgrade` skill ships in **v0.3.0**, so an install set up from an earlier
+> version won't have it yet — do that one hop with the manual fallback above (or copy
+> `.claude/skills/upgrade/` from the kit). From v0.3.0 onward, `upgrade` drives everything.
 
 ## Acknowledgments
 

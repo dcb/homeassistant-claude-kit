@@ -113,6 +113,14 @@ the domain.kitchen_descriptor convention."
 
 > **Tip:** When creating components, always reference an existing example. *"Look at X, follow the pattern"* produces better results than describing the pattern from scratch.
 
+### Keeping the kit up to date
+
+```
+"Upgrade the kit."
+```
+
+The kit is versioned (see [CHANGELOG.md](CHANGELOG.md)). This runs the `upgrade` skill: it reads the structured changelog, checks each change since your version against *your* code, and applies only the ones still relevant — on a work branch, never a blind merge. It asks before touching anything risky and never overwrites your generated `entities.ts`/`areas.ts`. Review the branch, then merge and `make deploy-dashboard`.
+
 ---
 
 ## 4. Debugging and Diagnostics

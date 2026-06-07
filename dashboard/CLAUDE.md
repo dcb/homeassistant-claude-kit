@@ -20,7 +20,7 @@ Deploy from project root: `make deploy-dashboard` (NOT raw rsync).
 src/
   providers/HAProvider.tsx   # @hakit/core HassConnect wrapper (auth + WS)
   App.tsx                    # View registry → Shell
-  views/                    # Top-level pages (Home, Climate, Energy, Security, Settings, SystemHealth)
+  views/                    # Top-level pages (Home, Climate, Energy, Irrigation, Security, Settings, SystemHealth)
   components/
     layout/                 # Shell, Header, BottomNav, Sidebar
     cards/                  # Data display cards (RoomCard, CameraCard, VacuumCard, etc.)
