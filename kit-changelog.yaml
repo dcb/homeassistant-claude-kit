@@ -33,3 +33,82 @@ changes:
     detect: ""
     apply: ""
     default_action: skip-if-absent
+
+  - id: versioning-upgrade-foundation
+    version: 0.2.0
+    type: feature
+    breaking: false
+    title: "Kit versioning + agent-driven upgrade foundation"
+    commits: ["009e6d2", "d6df24e", "457d5bd", "a09ca53"]
+    conditions: "Applies to any install — adds version tracking + the release workflow."
+    detect: >
+      Install has no .kit-version / kit-changelog.yaml / CHANGELOG.md and no
+      release skill — i.e. it predates the versioning system.
+    apply: >
+      Add .kit-version, kit-changelog.yaml, CHANGELOG.md, tools/validate_changelog.py,
+      the release skill, and setup-infrastructure Step 10 from the kit. Stamp
+      .kit-version with the version the install is on.
+    default_action: ask
+
+  - id: track-dashboard-lib-source
+    version: 0.2.0
+    type: change
+    breaking: false
+    title: "Track dashboard/src/lib generic source so a clean clone compiles"
+    commits: ["79976e8"]
+    conditions: "Applies if your kit clone could not build without manually restoring dashboard/src/lib."
+    detect: >
+      The broad Python `lib/` rule in .gitignore also matched dashboard/src/lib,
+      leaving the dashboard's generic source (control hooks, format utils, scaffolds)
+      untracked — a fresh clone failed to compile.
+    apply: >
+      Narrow the .gitignore `lib/` rule with `!dashboard/src/lib/` and track all of
+      dashboard/src/lib (incl. the entities.ts/areas.ts scaffolds).
+    default_action: ask
+
+  - id: trv-heating-count-ignores-valve-position
+    version: 0.2.0
+    type: fix
+    breaking: false
+    title: "TRV active-heating check ignores closed valves"
+    commits: ["27fd79b"]
+    conditions: "Only if your dashboard shows a per-room heating count (RoomCard / ClimateSection)."
+    detect: >
+      The heating count is derived from state == 'heat' WITHOUT checking valve
+      position, so a TRV at a low setpoint (valve closed) still counts as heating.
+    detect_hint:
+      grep: "state\\s*===?\\s*['\"]heat['\"]"
+      files: ["dashboard/src/hooks/useRoomState.ts", "dashboard/src/components/popups/ClimateSection.tsx"]
+    apply: >
+      Add lib/climate.ts::isTrvActivelyHeating (prefers hvac_action, falls back to
+      setpoint>current) and use it at both heating-count call-sites.
+    default_action: ask
+
+  - id: irrigation-core-view
+    version: 0.2.0
+    type: feature
+    breaking: false
+    title: "Irrigation core view + per-zone settings popup (replaces the stub)"
+    commits: ["6b97266", "32eab02"]
+    conditions: "Applies if your IrrigationView is still the placeholder stub."
+    detect: >
+      dashboard/src/views/IrrigationView.tsx renders PlaceholderSection cards and
+      imports nothing — the real irrigation view was never installed.
+    apply: >
+      Replace the stub with the real IrrigationView + IrrigationZonePopup +
+      useIrrigationRuns + the irrigation entities block, and copy the YAML templates
+      from docs/templates/config. Adapt the example zones to your real zones.
+    default_action: ask
+
+  - id: recipes-mealie-template
+    version: 0.2.0
+    type: feature
+    breaking: false
+    title: "Recipes (Mealie) optional template + setup guide"
+    commits: ["dcbc8a3"]
+    conditions: "Opt-in — requires the Mealie add-on, the official Mealie integration, and an LLM API key."
+    detect: "Install does not have docs/templates/recipes/ (the optional recipes feature)."
+    apply: >
+      Optional feature. Follow docs/templates/recipes/README.md to copy the dashboard
+      files, merge the config fragment, add the LLM secrets, and wire the nav entry.
+    default_action: skip-if-absent
