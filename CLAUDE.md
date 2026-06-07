@@ -201,7 +201,7 @@ When privacy mode is active (`test -f .claude/privacy-patterns`):
 - **Cut a release** with the `release` skill (producer-only; see `.claude/skills/release/SKILL.md`).
   It curates commits → changelog entries, derives the bump, renders `CHANGELOG.md`, bumps
   `.kit-version` + `dashboard/package.json`, and tags. Validate with `python tools/validate_changelog.py`.
-- **Upgrade an install** with the `upgrade` skill *(added in a later phase)*; until then see README "Updating".
+- **Upgrade an install** with the `upgrade` skill (`.claude/skills/upgrade/SKILL.md`): it reads `kit-changelog.yaml`, checks each change against the local code, and applies/skips/asks per change on a work branch (never a blind merge). See `references/apply-rubric.md` for the safety boundaries.
 - Cross-tool: `AGENTS.md` mirrors this so non-Claude agents can follow the same runbooks.
 
 ## Important Notes

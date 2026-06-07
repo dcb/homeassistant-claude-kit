@@ -67,8 +67,10 @@ procedure by reading and following the steps in the relevant file:
 
 - **Cut a new kit version** → follow `.claude/skills/release/SKILL.md` (+ `references/changelog-schema.md`).
   Producer-only; runs inside the kit repo. Validate with `python tools/validate_changelog.py` before committing.
-- **Upgrade an install to a newer kit version** → follow `.claude/skills/upgrade/SKILL.md` *(added in a later
-  phase)*. Until it exists, upgrades are manual (see README "Updating").
+- **Upgrade an install to a newer kit version** → follow `.claude/skills/upgrade/SKILL.md` (+
+  `references/apply-rubric.md`). It reads `kit-changelog.yaml`, checks each change against the local
+  code, and applies/skips/asks per change on a work branch — never a blind merge. Safety boundaries
+  (auto-allowlist, secret-path policy, 3-way merge, never-execute-detect/apply) are in the rubric.
 
 Never hand-edit `CHANGELOG.md` (regenerate from `kit-changelog.yaml`); never run `git push --tags` or push
 to an inferred remote in `release` — resolve the kit remote by URL match and confirm first.
