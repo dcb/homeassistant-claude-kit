@@ -1,7 +1,7 @@
 ---
 title: v0.2.0 — Irrigation (core view) + Recipes (optional template) + TRV fix
 type: feat
-status: active
+status: completed
 date: 2026-06-07
 origin: docs/brainstorms/2026-06-07-kit-versioning-agent-upgrade-brainstorm.md
 ---
@@ -50,7 +50,7 @@ Bundled into one release (`v0.2.0`). Grounded in the two discovery reports (2026
 - `config/recipes.yaml` (scripts), `config/custom_scripts/mealie_upload_image.py`, `configuration-recipes.yaml` fragment (helpers + rest_commands + template sensor + shell_command).
 - `README.md` — full setup instructions (Mealie add-on + official integration, the helper set, the two LLM secrets, the dependency chain dashboard→WS→script→rest_command→LLM→Mealie→image-python, install steps).
 
-## Build sequence
+## Build sequence (✅ all complete — shipped as v0.2.0)
 1. [x] TRV fix (done, `27fd79b`).
 2. Irrigation: entities block (genericized) → `useIrrigationRuns` → `IrrigationView` (replace stub) → `IrrigationZonePopup`; `npx tsc -b --noEmit`; then YAML templates + doc.
 3. Recipes: create `docs/templates/recipes/` tree (copy + genericize); write the README. (Templates aren't compiled by the kit build, but verify the copied TS is internally consistent.)
