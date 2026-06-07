@@ -54,12 +54,12 @@ export function ContextCard({ config }: { config: ContextConfig }) {
   const weatherState = entities[config.weather]?.state ?? "sunny";
   const weatherAttrs = entities[config.weather]?.attributes ?? {};
   const outdoorTemp = parseNumericState(entities[config.outdoorTemp]?.state);
-  const humidity = parseNumericState(entities[config.outdoorHumidity]?.state);
-  const pressure = parseNumericState(entities[config.indoorPressure]?.state);
+  const humidity = parseNumericState(entities[config.outdoorHumidity ?? ""]?.state);
+  const pressure = parseNumericState(entities[config.indoorPressure ?? ""]?.state);
   const windSpeed = weatherAttrs.wind_speed as number | undefined;
   const windBearing = weatherAttrs.wind_bearing as number | undefined;
-  const forecastLow = parseNumericState(entities[config.forecastLow]?.state);
-  const forecastHigh = parseNumericState(entities[config.forecastHigh]?.state);
+  const forecastLow = parseNumericState(entities[config.forecastLow ?? ""]?.state);
+  const forecastHigh = parseNumericState(entities[config.forecastHigh ?? ""]?.state);
 
   const forecast = useWeatherForecast();
   const forecastSlice = forecast.slice(0, 24);

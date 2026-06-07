@@ -47,9 +47,9 @@ function CameraContent({ camera, onSnapshot, gateLockEntity }: { camera: CameraC
   const [snapshotRefreshKey, setSnapshotRefreshKey] = useState(0);
   const [isTakingSnapshot, setIsTakingSnapshot] = useState(false);
 
-  const battery = parseNumericState(entities[camera.batterySensor]?.state);
-  const wifi = parseNumericState(entities[camera.wifiSensor]?.state);
-  const charging = entities[camera.chargingSensor]?.state;
+  const battery = parseNumericState(entities[camera.batterySensor ?? ""]?.state);
+  const wifi = parseNumericState(entities[camera.wifiSensor ?? ""]?.state);
+  const charging = entities[camera.chargingSensor ?? ""]?.state;
   const cameraState = entities[camera.entity]?.state;
 
   // Watch camera entity state via WS subscription (replaces REST polling).
@@ -189,7 +189,7 @@ function CameraContent({ camera, onSnapshot, gateLockEntity }: { camera: CameraC
   // Prefer saved snapshot, fall back to event image
   // Use a per-mount timestamp so each popup open busts the browser cache
   const [mountTime] = useState(() => Date.now());
-  const imageEntity = entities[camera.eventImage];
+  const imageEntity = entities[camera.eventImage ?? ""];
   const snapshotUrl = `/local/snapshots/${camera.id}.jpg?_t=${mountTime}`;
   const eventImageUrl = buildImageUrl(imageEntity);
   const imageUrl = !imgError ? snapshotUrl : eventImageUrl;
@@ -247,7 +247,7 @@ function CameraContent({ camera, onSnapshot, gateLockEntity }: { camera: CameraC
               {isStreaming ? (
                 <>
                   <Go2RtcPlayer
-                    stream={camera.go2rtcStream}
+                    stream={camera.go2rtcStream ?? camera.id}
                     cameraEntity={camera.entity}
                     className="absolute inset-0 h-full w-full"
                     onPlaying={() => setIsPlaying(true)}

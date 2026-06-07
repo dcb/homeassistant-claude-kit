@@ -1,0 +1,1618 @@
+- id: '1573531813810'
+  alias: Outside Lights ON at Sunset
+  description: ''
+  triggers:
+  - event: sunset
+    trigger: sun
+    offset: 0:15:00
+  conditions: []
+  actions:
+  - type: turn_on
+    device_id: 2a175c707ac13e1dab910264cc479e41
+    entity_id: light.600w_dimmer_6
+    domain: light
+    brightness_pct: 50
+  - type: turn_on
+    device_id: 691c7eca6a68b9840e5cbfbd6f2822d1
+    entity_id: switch.scene_capable_push_on_off
+    domain: switch
+  - type: turn_on
+    device_id: f3c410ed827b6cefe39c3c891cb9853c
+    entity_id: switch.scene_capable_push_on_off_6
+    domain: switch
+  - type: turn_on
+    device_id: 7b1c3a449492ded8e4224dbe2d2e305e
+    entity_id: switch.scene_capable_push_on_off_10
+    domain: switch
+  - type: turn_on
+    device_id: 6a482ef2fef86b2ec6451a8896428e39
+    entity_id: switch.scene_capable_push_on_off_5
+    domain: switch
+  - action: media_player.play_media
+    data:
+      announce: true
+      media:
+        media_content_id: /config/www/media/chime-small.mp3
+        media_content_type: music
+        metadata: {}
+    target:
+      entity_id:
+      - media_player.unnamed_room
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 5
+      milliseconds: 0
+  - action: tts.speak
+    metadata: {}
+    data:
+      cache: false
+      media_player_entity_id: media_player.unnamed_room
+      message: Outside lights ON
+    target:
+      entity_id:
+      - tts.google_cloud
+  mode: single
+- id: '1573532317648'
+  alias: Outside Back of the House Lights OFF at [9:30]
+  description: ''
+  triggers:
+  - at: '21:30:00'
+    trigger: time
+  conditions: []
+  actions:
+  - type: turn_off
+    device_id: 6a482ef2fef86b2ec6451a8896428e39
+    entity_id: switch.scene_capable_push_on_off_5
+    domain: switch
+  - type: turn_off
+    device_id: 7b1c3a449492ded8e4224dbe2d2e305e
+    entity_id: switch.scene_capable_push_on_off_10
+    domain: switch
+  - type: turn_off
+    device_id: f3c410ed827b6cefe39c3c891cb9853c
+    entity_id: switch.scene_capable_push_on_off_6
+    domain: switch
+  mode: single
+- id: '1578098996988'
+  alias: Master Towel Warmer OFF by TIMER
+  description: Turn OFF the Master Towell Warmer by Timer
+  trigger:
+  - platform: device
+    type: turned_on
+    device_id: 2aed9d4d637ba2fda50d74196fc7c2db
+    entity_id: switch.smart_outlet
+    domain: switch
+    for:
+      hours: 2
+      minutes: 0
+      seconds: 0
+      milliseconds: 0
+  condition: []
+  action:
+  - type: turn_off
+    device_id: 2aed9d4d637ba2fda50d74196fc7c2db
+    entity_id: switch.smart_outlet
+    domain: switch
+  mode: single
+- id: '1585354011193'
+  alias: Turn ON Stairs at Sunset
+  description: ''
+  trigger:
+  - event: sunset
+    platform: sun
+  condition: []
+  action:
+  - type: turn_on
+    device_id: ac3c6b143ab0d49bad4000c234c5ac4a
+    entity_id: light.600w_dimmer
+    domain: light
+    brightness_pct: 20
+  mode: single
+- id: '1585354161913'
+  alias: Turn OFF Stairs at Sunrise
+  description: ''
+  trigger:
+  - event: sunrise
+    offset: 0:15:00
+    platform: sun
+  condition: []
+  action:
+  - type: turn_off
+    device_id: ac3c6b143ab0d49bad4000c234c5ac4a
+    entity_id: light.600w_dimmer
+    domain: light
+  mode: single
+- id: '1585519036628'
+  alias: Turn Off Basement
+  description: ''
+  triggers:
+  - type: turned_on
+    device_id: d565ca5aa1bf5cd37180379483d6c197
+    entity_id: switch.scene_capable_push_on_off_19
+    domain: switch
+    for:
+      hours: 0
+      minutes: 30
+      seconds: 0
+      milliseconds: 0
+    trigger: device
+  conditions: []
+  actions:
+  - type: turn_off
+    device_id: d565ca5aa1bf5cd37180379483d6c197
+    entity_id: switch.scene_capable_push_on_off_19
+    domain: switch
+  mode: single
+- id: '1585520419695'
+  alias: Turn Off Garage
+  description: ''
+  trigger:
+  - platform: device
+    type: turned_on
+    device_id: 09e57d59f8c7036495831e89e9718044
+    entity_id: switch.scene_capable_push_on_off_7
+    domain: switch
+    for:
+      hours: 0
+      minutes: 15
+      seconds: 0
+      milliseconds: 0
+  - platform: device
+    type: turned_on
+    device_id: 380007af64e781c06478f1ad869b0b2c
+    entity_id: switch.scene_capable_push_on_off_8
+    domain: switch
+    for:
+      hours: 0
+      minutes: 15
+      seconds: 0
+      milliseconds: 0
+  condition: []
+  action:
+  - type: turn_off
+    device_id: 09e57d59f8c7036495831e89e9718044
+    entity_id: switch.scene_capable_push_on_off_7
+    domain: switch
+  - type: turn_off
+    device_id: 380007af64e781c06478f1ad869b0b2c
+    entity_id: switch.scene_capable_push_on_off_8
+    domain: switch
+  mode: single
+- id: '1585521395947'
+  alias: Turn off Laundry Room
+  description: ''
+  trigger:
+  - platform: device
+    type: turned_on
+    device_id: 7247843e05f68e967d7b792c1aa54c25
+    entity_id: switch.scene_capable_push_on_off_13
+    domain: switch
+    for:
+      hours: 0
+      minutes: 5
+      seconds: 0
+      milliseconds: 0
+  condition: []
+  action:
+  - type: turn_off
+    device_id: 7247843e05f68e967d7b792c1aa54c25
+    entity_id: switch.scene_capable_push_on_off_13
+    domain: switch
+  mode: single
+- id: '1585521473730'
+  alias: Turn off Powder II
+  description: ''
+  trigger:
+  - platform: device
+    type: turned_on
+    device_id: cf35ca9e2908303b0f44226ad94f97e8
+    entity_id: switch.scene_capable_push_on_off_9
+    domain: switch
+    for:
+      hours: 0
+      minutes: 8
+      seconds: 0
+  condition: []
+  action:
+  - repeat:
+      count: '2'
+      sequence:
+      - type: toggle
+        device_id: cf35ca9e2908303b0f44226ad94f97e8
+        entity_id: switch.scene_capable_push_on_off_9
+        domain: switch
+      - delay: 00:00:01
+      - type: toggle
+        device_id: cf35ca9e2908303b0f44226ad94f97e8
+        entity_id: 7aa0206f425400f4add217aaa0524616
+        domain: light
+      - delay:
+          hours: 0
+          minutes: 1
+          seconds: 0
+          milliseconds: 0
+  - type: turn_off
+    device_id: cf35ca9e2908303b0f44226ad94f97e8
+    entity_id: switch.scene_capable_push_on_off_9
+    domain: switch
+  mode: single
+- id: '1585521603472'
+  alias: Turn off King Room
+  description: ''
+  trigger:
+  - platform: device
+    type: turned_on
+    device_id: 47f5da1d8d9611df92ab64447fcd01c3
+    entity_id: switch.scene_capable_push_on_off_15
+    domain: switch
+    for:
+      hours: 0
+      minutes: 8
+      seconds: 0
+      milliseconds: 0
+  condition: []
+  action:
+  - repeat:
+      count: '2'
+      sequence:
+      - type: toggle
+        device_id: 47f5da1d8d9611df92ab64447fcd01c3
+        entity_id: switch.scene_capable_push_on_off_15
+        domain: switch
+      - delay: 00:00:01
+  - delay: 00:01:00
+  - type: turn_off
+    device_id: 47f5da1d8d9611df92ab64447fcd01c3
+    entity_id: switch.scene_capable_push_on_off_15
+    domain: switch
+  mode: single
+- id: '1585528645622'
+  alias: Turn off Mudroom
+  description: ''
+  trigger:
+  - platform: device
+    type: turned_on
+    device_id: 16c3428304652fc118fa59e7877f5ba1
+    entity_id: switch.scene_capable_push_on_off_2
+    domain: switch
+    for:
+      hours: 0
+      minutes: 5
+      seconds: 0
+      milliseconds: 0
+  condition: []
+  action:
+  - type: turn_off
+    device_id: 16c3428304652fc118fa59e7877f5ba1
+    entity_id: switch.scene_capable_push_on_off_2
+    domain: switch
+  mode: single
+- id: '1591157498460'
+  alias: Master Towel on Shower or Tub
+  description: Turn on towel warmer for X hours when you turn on the light in the
+    shower
+  trigger:
+  - platform: device
+    type: turned_on
+    device_id: eac293999dc3b7af8604342b6044f8a1
+    entity_id: switch.scene_capable_push_on_off_17
+    domain: switch
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 1
+      milliseconds: 0
+  - platform: device
+    type: turned_on
+    device_id: 9fd347a5c12e1838a7123aac43c4e843
+    entity_id: switch.scene_capable_push_on_off_16
+    domain: switch
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 1
+      milliseconds: 0
+  condition: []
+  action:
+  - type: turn_on
+    device_id: 2aed9d4d637ba2fda50d74196fc7c2db
+    entity_id: switch.smart_outlet
+    domain: switch
+  mode: single
+- id: '1597424125850'
+  alias: Turn off Master Closet
+  description: ''
+  triggers:
+  - type: turned_on
+    device_id: 0bda9a222f12199d22b11b1445e7889d
+    entity_id: switch.scene_capable_push_on_off_18
+    domain: switch
+    for:
+      hours: 0
+      minutes: 5
+      seconds: 0
+      milliseconds: 0
+    trigger: device
+  conditions: []
+  actions:
+  - repeat:
+      count: '2'
+      sequence:
+      - type: toggle
+        device_id: 0bda9a222f12199d22b11b1445e7889d
+        entity_id: switch.scene_capable_push_on_off_18
+        domain: switch
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 1
+          milliseconds: 0
+  - action: media_player.play_media
+    metadata: {}
+    data:
+      media_content_id: /config/www/media/chime-small.mp3
+      media_content_type: music
+      announce: true
+    target:
+      entity_id: media_player.unnamed_room_2
+    enabled: false
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 5
+      milliseconds: 0
+    enabled: false
+  - action: tts.speak
+    metadata: {}
+    data:
+      cache: false
+      media_player_entity_id: media_player.unnamed_room_2
+      message: The closet light will turn off in 1 minute
+    target:
+      entity_id:
+      - tts.google_cloud
+    enabled: false
+  - delay: 00:01:00
+  - type: turn_off
+    device_id: 0bda9a222f12199d22b11b1445e7889d
+    entity_id: switch.scene_capable_push_on_off_18
+    domain: switch
+  mode: single
+- id: '1597424374748'
+  alias: Turn off Master Shower
+  description: ''
+  triggers:
+  - type: turned_on
+    device_id: eac293999dc3b7af8604342b6044f8a1
+    entity_id: switch.scene_capable_push_on_off_17
+    domain: switch
+    for:
+      hours: 0
+      minutes: 15
+      seconds: 0
+    trigger: device
+  conditions: []
+  actions:
+  - repeat:
+      count: '2'
+      sequence:
+      - type: toggle
+        device_id: eac293999dc3b7af8604342b6044f8a1
+        entity_id: switch.scene_capable_push_on_off_17
+        domain: switch
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 1
+          milliseconds: 0
+  - action: media_player.play_media
+    metadata: {}
+    data:
+      media_content_id: /config/www/media/chime-small.mp3
+      media_content_type: music
+      announce: true
+    target:
+      entity_id:
+      - media_player.unnamed_room_2
+    enabled: false
+  - delay:
+      hours: 0
+      minutes: 0
+      seconds: 5
+      milliseconds: 0
+    enabled: false
+  - action: tts.speak
+    metadata: {}
+    data:
+      cache: false
+      media_player_entity_id: media_player.unnamed_room_2
+      message: Shower light will turn off in 2 minutes
+    target:
+      entity_id:
+      - tts.google_cloud
+    enabled: false
+  - delay: 00:02:00
+  - type: turn_off
+    device_id: eac293999dc3b7af8604342b6044f8a1
+    entity_id: switch.scene_capable_push_on_off_17
+    domain: switch
+  mode: single
+- id: '1597429477000'
+  alias: Close Garage Single Door at Night
+  description: ''
+  triggers:
+  - at: '21:30:00'
+    trigger: time
+  conditions:
+  - condition: device
+    device_id: 1c26df84ad437102b2b2a8da7c5474b2
+    domain: cover
+    entity_id: 9e82e203fecceca8ef27c10b27720e76
+    type: is_open
+  actions:
+  - device_id: 1c26df84ad437102b2b2a8da7c5474b2
+    domain: cover
+    entity_id: 9e82e203fecceca8ef27c10b27720e76
+    type: close
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      message: Ancu's garage door is closing now.
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: /config/www/media/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+  mode: single
+- id: '1597429617753'
+  alias: Close Garage Double Door at Night
+  description: ''
+  triggers:
+  - at: '21:30:00'
+    trigger: time
+  conditions:
+  - condition: device
+    device_id: 669323615ffb942a6e8f84cc4f3a01eb
+    domain: cover
+    entity_id: 138bcd27d84d60444fd020b3b8bf17ef
+    type: is_open
+  actions:
+  - device_id: 669323615ffb942a6e8f84cc4f3a01eb
+    domain: cover
+    entity_id: 138bcd27d84d60444fd020b3b8bf17ef
+    type: close
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      message: Hori's garage door is closing now.
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: /config/www/media/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+  mode: single
+- id: '1605659583623'
+  alias: Basement Humidity - High
+  description: ''
+  trigger:
+  - platform: state
+    entity_id: binary_sensor.basement_humidity_alert
+    from: 'off'
+    to: 'on'
+  condition: []
+  action:
+  - service: notify.whatsapp
+    data:
+      message: High Humidity in basement!
+  mode: single
+- id: '1605663474967'
+  alias: Basement Humidity - Normal
+  description: ''
+  trigger:
+  - platform: state
+    entity_id: binary_sensor.basement_humidity_alert
+    from: 'on'
+    to: 'off'
+  condition: []
+  action:
+  - service: notify.whatsapp
+    data:
+      message: Basement humidity back to normal.
+  mode: single
+- id: '1607991899348'
+  alias: Outside Front of the House Lights OFF at [11:00]
+  description: ''
+  triggers:
+  - at: '23:00:00'
+    trigger: time
+  conditions: []
+  actions:
+  - type: turn_off
+    device_id: 691c7eca6a68b9840e5cbfbd6f2822d1
+    entity_id: switch.scene_capable_push_on_off
+    domain: switch
+  - type: turn_off
+    device_id: 2a175c707ac13e1dab910264cc479e41
+    entity_id: light.600w_dimmer_6
+    domain: light
+  mode: single
+- id: '1634854775491'
+  alias: Master Towell Warmer ON by Remote
+  description: Turn Master Towell Warmer ON by Remote
+  trigger:
+  - platform: event
+    event_type: zwave_js_value_notification
+    event_data:
+      node_id: 59
+      label: Scene 001
+      value: KeyPressed
+  condition: []
+  action:
+  - type: turn_on
+    device_id: 2aed9d4d637ba2fda50d74196fc7c2db
+    entity_id: switch.smart_outlet
+    domain: switch
+  mode: single
+- id: '1634856218812'
+  alias: Master Towell Warmer OFF by Remote
+  description: Turn Master Towell Warmer OFF by Remote
+  trigger:
+  - platform: event
+    event_type: zwave_js_value_notification
+    event_data:
+      node_id: 59
+      label: Scene 002
+      value: KeyPressed
+  condition: []
+  action:
+  - type: turn_off
+    device_id: 2aed9d4d637ba2fda50d74196fc7c2db
+    entity_id: switch.smart_outlet
+    domain: switch
+  mode: single
+- id: '1634858810672'
+  alias: Girls' Towell Warmer ON by Remote
+  description: Turn Girls' Towell Warmer ON by Remote
+  trigger:
+  - platform: event
+    event_type: zwave_js_value_notification
+    event_data:
+      node_id: 60
+      label: Scene 001
+      value: KeyPressed
+  condition: []
+  action:
+  - type: turn_on
+    device_id: 6874c576d05cf8226304981821f47559
+    entity_id: switch.smart_outlet_2
+    domain: switch
+  mode: single
+- id: '1634858867448'
+  alias: Girls' Towell Warmer OFF by Remote
+  description: Turn Girls' Towell Warmer OFF by Remote
+  trigger:
+  - platform: event
+    event_type: zwave_js_value_notification
+    event_data:
+      node_id: 60
+      label: Scene 002
+      value: KeyPressed
+  condition: []
+  action:
+  - type: turn_off
+    device_id: 6874c576d05cf8226304981821f47559
+    entity_id: switch.smart_outlet_2
+    domain: switch
+  mode: single
+- id: '1634858987511'
+  alias: Girls' Towel Warmer OFF by TIMER
+  description: Turn OFF the Girls' Towell Warmer by Timer
+  trigger:
+  - platform: device
+    type: turned_on
+    device_id: 6874c576d05cf8226304981821f47559
+    entity_id: switch.smart_outlet_2
+    domain: switch
+    for:
+      hours: 2
+      minutes: 0
+      seconds: 0
+      milliseconds: 0
+  condition: []
+  action:
+  - type: turn_off
+    device_id: 6874c576d05cf8226304981821f47559
+    entity_id: switch.smart_outlet_2
+    domain: switch
+  mode: single
+- id: '1639434833767'
+  alias: Christmas Lights ON at Sunset
+  description: ''
+  triggers:
+  - event: sunset
+    trigger: sun
+  conditions: []
+  actions:
+  - type: turn_on
+    device_id: e543bfb950c7f591301d9b0d8d17bea6
+    entity_id: switch.receptacle
+    domain: switch
+  - type: turn_on
+    device_id: 8ed1ee71a8f49194900747b46d16b34d
+    entity_id: switch.receptacle_2
+    domain: switch
+  - type: turn_on
+    device_id: 6b8b99b19c7e7f4061b60bd7d652d2ef
+    entity_id: switch.smart_outlet_3
+    domain: switch
+  - type: turn_on
+    device_id: d111e5be7d7f6ab0fdd5dde10521d59d
+    entity_id: light.wled_living_room
+    domain: light
+    enabled: false
+  - type: turn_on
+    device_id: aeaaeb309fd6f5adef11d3a8707c4030
+    entity_id: light.wled_tv_living_room
+    domain: light
+    enabled: false
+  - type: turn_on
+    device_id: 8f371f08048ae54994365854979f59f4
+    entity_id: 50f3eb0947303834f1ff22fd7d02132d
+    domain: light
+    enabled: false
+  mode: single
+- id: '1639434946694'
+  alias: Christmas Lights OFF
+  description: ''
+  trigger:
+  - platform: time
+    at: '22:30:00'
+  condition: []
+  action:
+  - type: turn_off
+    device_id: e543bfb950c7f591301d9b0d8d17bea6
+    entity_id: switch.receptacle
+    domain: switch
+  - type: turn_off
+    device_id: 8ed1ee71a8f49194900747b46d16b34d
+    entity_id: switch.receptacle_2
+    domain: switch
+  - type: turn_off
+    device_id: 6b8b99b19c7e7f4061b60bd7d652d2ef
+    entity_id: switch.smart_outlet_3
+    domain: switch
+  - type: turn_off
+    device_id: d111e5be7d7f6ab0fdd5dde10521d59d
+    entity_id: light.wled_living_room
+    domain: light
+  - type: turn_off
+    device_id: aeaaeb309fd6f5adef11d3a8707c4030
+    entity_id: light.wled_tv_living_room
+    domain: light
+  - type: turn_off
+    device_id: 8f371f08048ae54994365854979f59f4
+    entity_id: 50f3eb0947303834f1ff22fd7d02132d
+    domain: light
+  mode: single
+- id: '1640294724888'
+  alias: 'A/C Turn OFF on Power Outage '
+  description: ''
+  trigger:
+  - platform: state
+    entity_id:
+    - binary_sensor.grid_status
+    from: 'on'
+    to: 'off'
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 30
+  condition:
+  - condition: state
+    entity_id: climate.downstairs
+    state: cooling
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 0
+    attribute: hvac_action
+  - condition: or
+    conditions:
+    - condition: state
+      entity_id: climate.family_room
+      state: cooling
+      attribute: hvac_action
+  - condition: or
+    conditions:
+    - condition: state
+      entity_id: climate.master_bedroom
+      state: cooling
+      attribute: hvac_action
+  action:
+  - service: climate.set_hvac_mode
+    target:
+      entity_id: climate.downstairs
+    data:
+      hvac_mode: 'off'
+  - service: climate.set_hvac_mode
+    data:
+      hvac_mode: 'off'
+    target:
+      entity_id: climate.family_room
+  - service: climate.set_hvac_mode
+    data:
+      hvac_mode: 'off'
+    target:
+      entity_id: climate.master_bedroom
+  mode: single
+- id: '1671304988823'
+  alias: Water in  the basement
+  description: Send notifications when water is detected in the basement.
+  triggers:
+  - type: moist
+    device_id: bd2c513a5b8e20f2e523f4964d0bda43
+    entity_id: 68bd4a8364d422d0fc4b970c15b671f6
+    domain: binary_sensor
+    trigger: device
+  - type: moist
+    device_id: 5821d82cee9ce543095ad74b4dd48547
+    entity_id: 37950206d7aa4e9eacaa3f25a31bfed7
+    domain: binary_sensor
+    trigger: device
+  - type: moist
+    device_id: a5a5653d3475c6ccdef1b6f018f7e265
+    entity_id: 9c5d4abe9aa4e6ad7b715dcfe8281190
+    domain: binary_sensor
+    trigger: device
+  - type: moist
+    device_id: e7f4a93d62b1f50a6d30f293f09e1ecc
+    entity_id: 2d9801ec450c1916888d2e82a7280fd7
+    domain: binary_sensor
+    trigger: device
+  conditions: []
+  actions:
+  - data:
+      message: "Water leaks detected in the basement. Utilities Status:  [{{ \nstates(\"binary_sensor.utilities_flood_freeze_sensor_water_leak_detected\")
+        }}].\nUnfinshed Storage Status: [{{    \nstates(\"binary_sensor.flood_freeze_sensor_water_leak_detected\")}}].\nLeft
+        Window Leak Status: [{{    \nstates(\"binary_sensor.flood_sensor_basement_window_left_water_leak_detected_2\")}}].\nRight
+        Window Leak Status: [{{    \nstates(\"binary_sensor.flood_sensor_basement_window_right_water_leak_detected_2\")}}]."
+    action: notify.notify
+  - data:
+      message: "Water leaks detected in the basement. Utilities Status:  [{{    \n
+        \ states(\"binary_sensor.utilities_flood_freeze_sensor_water_leak_detected\")
+        }}].\nUnfinshed Storage Status: [{{    \n  states(\"binary_sensor.flood_freeze_sensor_water_leak_detected\")}}].\nLeft
+        Window Leak Status: [{{    \n  states(\"binary_sensor.flood_sensor_basement_window_left_water_leak_detected_2\")}}].\nRight
+        Window Leak Status: [{{    \n  states(\"binary_sensor.flood_sensor_basement_window_right_water_leak_detected_2\")}}]."
+    action: notify.whatsapp
+  - metadata: {}
+    data:
+      title: Water leaks detected in the basement
+      message: '**Utilities Status**:  [{{     states("binary_sensor.utilities_flood_freeze_sensor_water_leak_detected")
+        }}].<br/> **Unfinshed Storage Status**: [{{     states("binary_sensor.flood_freeze_sensor_water_leak_detected")
+        }}].<br/> **Left Window Leak Status**: [{{     states("binary_sensor.flood_sensor_basement_window_left_water_leak_detected_2")
+        }}].<br/> **Right Window Leak Status**: [{{     states("binary_sensor.flood_sensor_basement_window_right_water_leak_detected_2")
+        }}].'
+    action: persistent_notification.create
+  - action: tts.speak
+    metadata: {}
+    data:
+      cache: true
+      media_player_entity_id: media_player.unnamed_room
+      message: Urgent! Urgent! Urgent! Water in the basement! Water in the basement!
+    target:
+      entity_id:
+      - tts.google_cloud
+  - action: tts.speak
+    metadata: {}
+    data:
+      cache: true
+      media_player_entity_id: media_player.unnamed_room
+      message: Urgent! Urgent! Urgent! Water in the basement! Water in the basement!
+    target:
+      entity_id:
+      - tts.google_cloud
+  mode: single
+- id: '1671805642357'
+  alias: Power OFF Notification
+  description: Power Status notification on state change ON->OFF
+  triggers:
+  - entity_id:
+    - binary_sensor.grid_status
+    to: 'off'
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 5
+    from: 'on'
+    trigger: state
+  conditions: []
+  actions:
+  - data:
+      message: Power OFF!
+    action: notify.whatsapp
+  - data:
+      message: Power OFF
+    action: notify.notify
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: /config/www/media/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+      message: 'A power outage has been detected! Again, a power outage has been detected.
+        Please turn off all unnecessary power consumers: washer, dryer, lights, A/C,
+        sauna, etc.'
+  mode: single
+- id: '1671814691736'
+  alias: Power ON Notification
+  description: ''
+  triggers:
+  - entity_id:
+    - binary_sensor.grid_status
+    from: 'off'
+    to: 'on'
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 5
+    trigger: state
+  conditions: []
+  actions:
+  - data:
+      message: Power ON!
+    action: notify.whatsapp
+  - data:
+      message: Power ON!
+    action: notify.notify
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      message: Power is back ON! Again, power is back ON. You can  resume your normal
+        activities.
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: /config/www/media/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+  mode: single
+- id: '1703018745368'
+  alias: Turn Off Powder I
+  description: ''
+  trigger:
+  - platform: device
+    type: turned_on
+    device_id: 36a2a99f9cedf0e9d285faa5f186f30c
+    entity_id: 7893e01e9b3b58783b6530cec28df7e4
+    domain: switch
+    for:
+      hours: 0
+      minutes: 8
+      seconds: 0
+  condition: []
+  action:
+  - repeat:
+      count: 2
+      sequence:
+      - type: toggle
+        device_id: 36a2a99f9cedf0e9d285faa5f186f30c
+        entity_id: 7893e01e9b3b58783b6530cec28df7e4
+        domain: switch
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 1
+          milliseconds: 0
+      - type: toggle
+        device_id: 36a2a99f9cedf0e9d285faa5f186f30c
+        entity_id: 7893e01e9b3b58783b6530cec28df7e4
+        domain: switch
+      - delay:
+          hours: 0
+          minutes: 1
+          seconds: 0
+          milliseconds: 0
+  - type: turn_off
+    device_id: 36a2a99f9cedf0e9d285faa5f186f30c
+    entity_id: 7893e01e9b3b58783b6530cec28df7e4
+    domain: switch
+  mode: single
+- id: '1706480223357'
+  alias: Low battery level detection & notification for all battery sensors
+  description: ''
+  use_blueprint:
+    path: sbyx/low-battery-level-detection-notification-for-all-battery-sensors.yaml
+    input:
+      actions:
+      - service: notify.persistent_notification
+        metadata: {}
+        data:
+          message: Low Battery - Please check the battery dashboard
+          title: Low Battery Sensors
+      - service: notify.whatsapp
+        metadata: {}
+        data:
+          message: Low Battery Sensors
+          target: 17742625384
+- id: '1725287919836'
+  alias: Master Bedroom - turn OFF
+  description: ''
+  triggers:
+  - type: turned_off
+    device_id: 4d74299e97fe6c23591c652836e5b52c
+    entity_id: 182f55e25e0066ac46927b01ec1dbe8b
+    domain: light
+    trigger: device
+  conditions: []
+  actions:
+  - type: turn_off
+    device_id: 70bd9c89539d04019f24b825ab9a2880
+    entity_id: 02f9a2e679f12991f539fd569501ccf6
+    domain: light
+  - type: turn_off
+    device_id: cf3b6c9ed512ef9f53f928d0794b2004
+    entity_id: ea952fa1d34d1312bdfa477d82d674a0
+    domain: light
+  mode: single
+- id: '1728525161704'
+  alias: Miele Washing Machine ENDED
+  description: Announcement
+  triggers:
+  - trigger: state
+    entity_id:
+    - sensor.washing_machine_status
+    to:
+    - program_ended
+  conditions: []
+  actions:
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      message: The washing machine program ended!
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: media-source://media_source/media/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+          browse_entity_id: media_player.unnamed_room
+  mode: single
+- id: '1728525304845'
+  alias: Miele Washing Machine ERROR
+  description: Announcement
+  triggers:
+  - type: problem
+    device_id: 4a99ecd773cf004c75354e6dddf6ffb9
+    entity_id: d1a047e8601e5a943dffb5afe03f7994
+    domain: binary_sensor
+    trigger: device
+  conditions: []
+  actions:
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      message: Washing machine program error!
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: media-source://media_source/local/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+  mode: single
+- id: '1728525429031'
+  alias: Miele Dryer Machine ENDED
+  description: Announcement
+  triggers:
+  - trigger: state
+    entity_id:
+    - sensor.tumble_dryer_status
+    to:
+    - program_ended
+  conditions: []
+  actions:
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      message: The Dryer machine program ended!
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: media-source://media_source/media/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+          browse_entity_id: media_player.unnamed_room
+  mode: single
+- id: '1728525518307'
+  alias: Miele Dryer Machine ERROR
+  description: Announcement
+  triggers:
+  - type: problem
+    device_id: c989745edebf9643d63cc0d5f7801829
+    entity_id: 82fbe1a5830ed428674cb9160c7845a1
+    domain: binary_sensor
+    trigger: device
+  conditions: []
+  actions:
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      message: Dryer machine program error!
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: media-source://media_source/media/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+          browse_entity_id: media_player.unnamed_room
+  mode: single
+- id: '1729253375297'
+  alias: 8am bus notification
+  description: ''
+  triggers:
+  - trigger: time
+    at: 08:00:00
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.workday_sensor
+    state: 'on'
+  actions:
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      message: Hello ladies, it is 8 AM now. The weather today is {{states ('weather.dream_home')
+        }}  with temperatures between {{states ('sensor.temp_min_next_12h') }} and
+        {{states ('sensor.temp_max_next_12h') }} Fahrenheit.  Dress appropriately!    Please
+        proceed outside and catch the bus!
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: media-source://media_source/media/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+          browse_entity_id: media_player.unnamed_room
+  mode: single
+- id: '1729287313918'
+  alias: 7:55am Get ready for school
+  description: ''
+  triggers:
+  - trigger: time
+    at: 07:55:00
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.workday_sensor
+    state: 'on'
+  actions:
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 5
+      speaker:
+        entity_id: media_player.unnamed_room
+        media_content_id: media-source://media_source/media/chime-small.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: chime-small.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+          browse_entity_id: media_player.unnamed_room
+      message: 'Hello ladies, it is 7:55 AM now. The weather today is {{states (''weather.dream_home'')
+        }}  with temperatures between {{states (''sensor.temp_min_next_12h'') }} and
+        {{states (''sensor.temp_max_next_12h'') }} Fahrenheit.  Dress appropriately!  Please
+        pack your stuff and get ready to leave the house! '
+  mode: single
+- id: '1729360744513'
+  alias: 715AM Maya
+  description: ''
+  triggers:
+  - trigger: time
+    at: 07:15:00
+  conditions:
+  - condition: state
+    entity_id: binary_sensor.workday_sensor
+    state: 'on'
+  actions:
+  - action: script.alert_template
+    metadata: {}
+    data:
+      volume: 50
+      message: Hey Mayaaaaaa! Wake up! Ding dong, wake up you peasant and go to school!
+      delay:
+        hours: 0
+        minutes: 0
+        seconds: 25
+      speaker:
+        entity_id: media_player.unnamed_room_5
+        media_content_id: media-source://media_source/media/reveille.mp3
+        media_content_type: audio/mpeg
+        metadata:
+          title: reveille.mp3
+          thumbnail:
+          media_class: music
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://media_source
+          browse_entity_id: media_player.unnamed_room_5
+  mode: single
+- id: '1729625760342'
+  alias: Plate Detection
+  description: ''
+  enabled: false
+  triggers:
+  - type: turned_on
+    device_id: 15d64d59beeda98905c32f042cb082f4
+    entity_id: 07c73b37daeb564ed86576ab6832e678
+    domain: binary_sensor
+    trigger: device
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 2
+  conditions: []
+  actions:
+  - action: image_processing.scan
+    target:
+      entity_id: image_processing.platerecognizer_garage_outside_medium_resolution_channel
+    data: {}
+  - variables:
+      text_message: "{% if is_state(\"sensor.plate_recognizer_bmw\", \"True\") -%}\n
+        \ The BMW just got home.\n{%- elif is_state(\"sensor.plate_recognizer_tesla\",
+        \"True\") -%}\n  Obelix just got home.\n{%- elif is_state(\"sensor.plate_recognizer_asterix\",
+        \"True\") -%}\n  Asterix just got home.\n{%- else -%}\n  Unknown vehicle(s)
+        in the driveway.\n  {% for state in state_attr('image_processing.platerecognizer_garage_outside_medium_resolution_channel',
+        'vehicles') -%}\n    {%- if loop.first %}The first vehicle is a {% elif loop.last
+        %} and last one is a {% else %}, the next one is a {% endif -%}\n    [{{ state.vehicle_type
+        | lower }}], with plate [{{ state.region_code }} {{ state.plate }}]. Confidence
+        [{{ state.confidence }}].\n  {%- endfor %}\n  {% set stats = state_attr('image_processing.platerecognizer_garage_outside_medium_resolution_channel',
+        'statistics') %}\n  Remaining calls [{{ stats.calls_remaining }}] | Calls
+        this period [{{ stats.usage.calls }}]\n  Resets on  [{{ (stats.usage.resets_on
+        | as_datetime | as_local).strftime('%Y-%m-%d') }}]\n{%- endif %} "
+  - action: notify.mobile_app_horis_iphone
+    metadata: {}
+    data:
+      title: Vehicle(s) in driveway
+      message: '{{ text_message }}'
+  - action: notify.persistent_notification
+    metadata: {}
+    data:
+      message: '{{ text_message }}'
+    enabled: true
+  mode: single
+- id: '1729694880886'
+  alias: AI Front Door Notifications
+  description: ''
+  triggers:
+  - type: motion
+    device_id: ac2d581461944b55a52701e7d5ad03fd
+    entity_id: 95f8df6b95822a39d5130a7d60fe5959
+    domain: binary_sensor
+    trigger: device
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 2
+  conditions: []
+  actions:
+  - action: script.front_door_snapshot
+    metadata: {}
+    data: {}
+  mode: single
+- id: '1729695925716'
+  alias: AI Driveway Notifications
+  description: ''
+  triggers:
+  - type: motion
+    device_id: 15d64d59beeda98905c32f042cb082f4
+    entity_id: 26a8040cf76e1f1ef4461849dce0a45e
+    domain: binary_sensor
+    trigger: device
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 2
+  conditions: []
+  actions:
+  - action: script.ai_driveway_notification_new
+    data: {}
+  mode: single
+- id: '1729697339317'
+  alias: AI Backyard Notifications
+  description: ''
+  triggers:
+  - type: motion
+    device_id: 9ef84b3fa5cd8e2dbc7378a418aefde3
+    entity_id: 908cfa093adeaf26df0d835bd20c26a3
+    domain: binary_sensor
+    trigger: device
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 2
+  conditions: []
+  actions:
+  - action: script.ai_backyard_notification
+    data: {}
+  mode: single
+- id: '1730495077994'
+  alias: Office - Light OFF
+  description: ''
+  enabled: false
+  triggers:
+  - entity_id: light.600w_dimmer_5
+    to: 'on'
+    trigger: state
+  - entity_id: light.600w_dimmer_5
+    to: 'off'
+    for:
+      seconds: 10
+    trigger: state
+  actions:
+  - target:
+      entity_id: light.600w_dimmer_5
+    action: light.turn_{{ trigger.to_state.state }}
+  mode: single
+- id: '1739211142121'
+  alias: AI Cleanup Folders
+  description: ''
+  triggers:
+  - trigger: time_pattern
+    hours: '4'
+    minutes: '0'
+    seconds: '0'
+  conditions: []
+  actions:
+  - action: shell_command.delete_old_www_picture
+    metadata: {}
+    data: {}
+  - action: shell_command.delete_old_www_plates
+    metadata: {}
+    data: {}
+  - action: shell_command.delete_old_tts
+    metadata: {}
+    data: {}
+  mode: single
+- id: '1750527525253'
+  alias: Garage Door Open - Asterix
+  description: ''
+  triggers:
+  - device_id: 8c113d87f941b613b9196a5c3d9423d8
+    domain: device_tracker
+    entity_id: c80cdfeb97fdbb5e16609818c49d3edd
+    type: enters
+    trigger: device
+    zone: zone.home_zone_tesla
+  conditions:
+  - condition: and
+    conditions:
+    - condition: device
+      device_id: 669323615ffb942a6e8f84cc4f3a01eb
+      domain: cover
+      entity_id: 138bcd27d84d60444fd020b3b8bf17ef
+      type: is_closed
+    - condition: state
+      entity_id: sensor.asterix_shift_state
+      state: D
+  actions:
+  - if:
+    - condition: sun
+      before: sunrise
+      after: sunset
+    then:
+    - action: switch.turn_on
+      metadata: {}
+      data: {}
+      target:
+        entity_id: switch.scene_capable_push_on_off_7
+  - action: cover.open_cover
+    metadata: {}
+    data: {}
+    target:
+      device_id: 669323615ffb942a6e8f84cc4f3a01eb
+  - action: notify.persistent_notification
+    metadata: {}
+    data:
+      message: Garage Double Door Opened by Asterix coming home.
+  - action: notify.mobile_app_horis_iphone
+    metadata: {}
+    data:
+      message: Garage Double-Door is Opened by Asterix coming home.
+  mode: single
+- id: '1750532579547'
+  alias: Garage Single Door Open - Obelix
+  description: ''
+  triggers:
+  - device_id: 599d5a578b34f658ef4769f8e74bb69f
+    domain: device_tracker
+    entity_id: a5dfe4c1975ffbffe6c3ea2c9d950690
+    type: enters
+    trigger: device
+    zone: zone.home
+  conditions:
+  - condition: and
+    conditions:
+    - condition: device
+      device_id: 1c26df84ad437102b2b2a8da7c5474b2
+      domain: cover
+      entity_id: 9e82e203fecceca8ef27c10b27720e76
+      type: is_closed
+    - condition: state
+      entity_id: sensor.sky_shift_state
+      state: D
+  actions:
+  - action: cover.open_cover
+    metadata: {}
+    data: {}
+    target:
+      device_id: 1c26df84ad437102b2b2a8da7c5474b2
+  - choose:
+    - conditions:
+      - condition: sun
+        before: sunrise
+        after: sunset
+      sequence:
+      - action: switch.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: switch.scene_capable_push_on_off_7
+    - conditions: []
+      sequence:
+      - action: notify.persistent_notification
+        metadata: {}
+        data:
+          message: Garage Single Door Opened by Obelix coming home.
+      - action: notify.mobile_app_horis_iphone
+        metadata: {}
+        data:
+          message: Garage Single-Door is Opened by Obelix coming home.
+  mode: single
+- id: '1750686584353'
+  alias: Garage Door Close - Asterix
+  description: ''
+  triggers:
+  - device_id: 8c113d87f941b613b9196a5c3d9423d8
+    domain: device_tracker
+    entity_id: c80cdfeb97fdbb5e16609818c49d3edd
+    type: leaves
+    trigger: device
+    zone: zone.home_zone_tesla
+  conditions:
+  - condition: and
+    conditions:
+    - condition: device
+      device_id: 669323615ffb942a6e8f84cc4f3a01eb
+      domain: cover
+      entity_id: 138bcd27d84d60444fd020b3b8bf17ef
+      type: is_open
+    - condition: state
+      entity_id: sensor.asterix_shift_state
+      state: D
+  actions:
+  - if:
+    - condition: sun
+      before: sunrise
+      after: sunset
+    then:
+    - action: switch.turn_off
+      metadata: {}
+      data: {}
+      target:
+        entity_id: switch.scene_capable_push_on_off_7
+  - action: cover.close_cover
+    metadata: {}
+    data: {}
+    target:
+      device_id: 669323615ffb942a6e8f84cc4f3a01eb
+  - action: notify.persistent_notification
+    metadata: {}
+    data:
+      message: Garage Double Door Closed by Asterix leaving home.
+  - action: notify.mobile_app_horis_iphone
+    metadata: {}
+    data:
+      message: Garage Double-Door is Closed by Asterix leaving home.
+  mode: single
+- id: '1750802337146'
+  alias: Tesla Force Updates
+  description: ''
+  triggers:
+  - type: motion
+    device_id: 15d64d59beeda98905c32f042cb082f4
+    entity_id: 26a8040cf76e1f1ef4461849dce0a45e
+    domain: binary_sensor
+    trigger: device
+  - type: turned_on
+    device_id: 15d64d59beeda98905c32f042cb082f4
+    entity_id: 07c73b37daeb564ed86576ab6832e678
+    domain: binary_sensor
+    trigger: device
+  conditions: []
+  actions:
+  - device_id: 8c113d87f941b613b9196a5c3d9423d8
+    domain: button
+    entity_id: 0637f5b77a3c80c0e9c2639b8eb46590
+    type: press
+  mode: single
+- id: '1762443897340'
+  alias: AI Front Door Notification
+  description: ''
+  use_blueprint:
+    path: mcinnes01/ai_camera_motion_notification.yaml
+    input:
+      camera_device: camera.front_door_medium_resolution_channel
+      is_ios: true
+      notify_device: d1b79a81ad19d57f1be7db390135243a
+      motion_sensor: binary_sensor.g3_flex_motion
+      ai_task_entity: ai_task.google_ai_task
+- id: '1763869239115'
+  alias: Motion based lighting - front door
+  description: ''
+  triggers:
+  - trigger: state
+    entity_id:
+    - binary_sensor.g3_flex_motion
+    from:
+    - 'off'
+    - 'on'
+    id: front_door_motion_on
+  - trigger: state
+    entity_id:
+    - binary_sensor.g3_flex_motion
+    from:
+    - 'on'
+    - 'off'
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 15
+    id: front_door_motion_off
+  conditions:
+  - condition: state
+    entity_id: sun.sun
+    state:
+    - below_horizon
+  actions:
+  - action: light.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: light.sunset_automation_group
+  mode: single
+- id: '1763999674680'
+  alias: Motion Activated Lights Outside - Front Door
+  description: ''
+  use_blueprint:
+    path: Blackshome/sensor-light.yaml
+    input:
+      motion_trigger:
+      - binary_sensor.g3_flex_motion
+      end_scenes: []
+      include_sun: sun_enabled
+      include_time: time_enabled
+      before_time: 07:00:00
+      light_switch:
+        entity_id: light.sunset_automation_group

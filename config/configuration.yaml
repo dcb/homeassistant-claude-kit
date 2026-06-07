@@ -1,0 +1,129 @@
+# Configure a default setup of Home Assistant (frontend, api, etc)
+default_config:
+
+# Activate the configuration editor
+config:
+
+# Example configuration.yaml
+homeassistant:
+  media_dirs:
+    media: /media
+
+# Uncomment this if you are using SSL/TLS, running in Docker container, etc.
+#http:
+#    ssl_certificate: /ssl/fullchain.pem
+#    ssl_key: /ssl/privkey.pem
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+
+alexa:
+  smart_home:
+
+frontend:
+
+shell_command:
+  disco_off: echo -e -n "\x01\x08\x00\xF2\x51\x01\x00\x05\x01\x51" > /dev/serial/by-id/usb-0658_0200-if00
+  disco_on: echo -e -n "\x01\x08\x00\xF2\x51\x01\x01\x05\x01\x50" > /dev/serial/by-id/usb-0658_0200-if00
+  delete_old_www_picture: 'find /config/www/picture -type f -exec /bin/rm -f {} \;'
+  delete_old_www_plates: 'find /config/www/plates -type f -exec /bin/rm -f {} \;'
+  delete_old_tts: 'find /config/tts -type f -exec /bin/rm -f {} \;'
+
+notify:
+  - name: WhatsApp
+    platform: rest
+    resource: https://api.callmebot.com/whatsapp.php
+    data:
+      source: HA
+      phone: +17742625384 #enter your phone number here
+      apikey: 608924 #enter your apikey here (see Setup above)
+#  - name: ALL_DEVICES
+#    platform: group
+#    services:
+#      - action: mobile_app_horis_iphone
+
+image_processing:
+  - platform: platerecognizer
+    api_token: 70178e964ba56353bfd5ce30f4459035988c69c9
+    regions:
+      - us
+    watched_plates:
+      - 683rs5
+      - 4bw614
+      - vead96
+    save_file_folder: /config/www/plates
+    save_timestamped_file: True
+    always_save_latest_file: True
+    #mmc: False
+    #detection_rule: strict
+    #region: strict
+    source:
+      - entity_id: camera.garage_outside_medium_resolution_channel
+    
+template:
+  - sensor:
+      - default_entity_id: sensor.counter_first_floor_lights
+        name: Lower Level Lights ON
+        state:
+          "{{ states.light | selectattr('state', 'eq', 'on') | selectattr('entity_id',
+          'in', label_entities('LIGHT')) | selectattr('entity_id', 'in', label_entities('FIRST_FLOOR'))
+          | list | count }}"
+  - sensor:
+      - default_entity_id: sensor.counter_second_floor_lights
+        name: Upper Level Lights ON
+        state:
+          "{{ states.light | selectattr('state', 'eq', 'on') | selectattr('entity_id',
+          'in', label_entities('LIGHT')) | selectattr('entity_id', 'in', label_entities('SECOND_FLOOR'))
+          | list | count }}"
+  - sensor:
+      - default_entity_id: sensor.counter_basement_lights
+        name: Basement Lights ON
+        state:
+          "{{ states.light | selectattr('state', 'eq', 'on') | selectattr('entity_id',
+          'in', label_entities('LIGHT')) | selectattr('entity_id', 'in', label_entities('BASEMENT'))
+          | list | count }}"
+  - sensor:
+      - default_entity_id: sensor.counter_outside_lights
+        name: Outside Lights ON
+        state:
+          "{{ states.light | selectattr('state', 'eq', 'on') | selectattr('entity_id',
+          'in', label_entities('LIGHT')) | selectattr('entity_id', 'in', label_entities('OUTSIDE'))
+          | list | count }}"
+  - sensor:
+      - default_entity_id: sensor.asterix_charge_limit_template
+        name: Asterix Charge Limit - Template
+        state: "{{ states('number.asterix_charge_limit') }}"
+  - trigger:
+    - trigger: time_pattern
+      hours: /1
+    - platform: homeassistant
+      event: start
+    - platform: event
+      event_type: event_template_reloaded
+    action:
+      - action: weather.get_forecasts
+        data:
+          type: hourly
+        target:
+          entity_id: weather.dream_home
+        response_variable: hourly_data
+    sensor:
+      - name: "Temp Max Next 12h"
+        unique_id: temp_max_next_12h
+        unit_of_measurement: "F"
+        device_class: temperature
+        state: >
+          {% set forecasts = hourly_data['weather.dream_home'].forecast[:12] %}
+          {{ forecasts | map(attribute='temperature') | list | max }}
+      - name: "Temp Min Next 12h"
+        unique_id: temp_min_next_12h
+        unit_of_measurement: "F"
+        device_class: temperature
+        state: >
+          {% set forecasts = hourly_data['weather.dream_home'].forecast[:12] %}
+          {{ forecasts | map(attribute='temperature') | list | min }}
+
+      - name: "Current Weather Condition"
+        unique_id: current_weather_condition
+        state: >
+          {{ hourly_data['weather.dream_home'].forecast[0].condition }}

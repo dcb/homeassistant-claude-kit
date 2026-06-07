@@ -1,0 +1,149 @@
+title: Lights Mobile
+views:
+  - title: Lights
+    path: lights
+    type: sections
+    max_columns: 2
+    cards:
+      # Top chips: quick counters already defined in your configuration.yaml
+      - type: chips
+        chips:
+          - type: entity
+            entity: sensor.counter_first_floor_lights
+            name: Lower Level
+            icon: mdi:lightbulb-on
+          - type: entity
+            entity: sensor.counter_second_floor_lights
+            name: Upper Level
+            icon: mdi:lightbulb-on
+          - type: entity
+            entity: sensor.counter_basement_lights
+            name: Basement
+            icon: mdi:lightbulb-on
+          - type: entity
+            entity: sensor.counter_outside_lights
+            name: Outside
+            icon: mdi:outdoor-lamp
+
+      # Section: First Floor
+      - type: section
+        label: First Floor
+        cards:
+          - type: custom:auto-entities
+            show_empty: false
+            card:
+              type: grid
+              columns: 2
+              square: false
+            card_param: cards
+            sort:
+              method: name
+            filter:
+              include:
+                - domain: light
+                  label: FIRST_FLOOR
+                  options:
+                    type: tile
+                    features:
+                      - type: light-brightness
+                      - type: light-color-temp
+                    tap_action:
+                      action: toggle
+
+      # Section: Second Floor
+      - type: section
+        label: Second Floor
+        cards:
+          - type: custom:auto-entities
+            show_empty: false
+            card:
+              type: grid
+              columns: 2
+              square: false
+            card_param: cards
+            sort:
+              method: name
+            filter:
+              include:
+                - domain: light
+                  label: SECOND_FLOOR
+                  options:
+                    type: tile
+                    features:
+                      - type: light-brightness
+                      - type: light-color-temp
+                    tap_action:
+                      action: toggle
+
+      # Section: Basement
+      - type: section
+        label: Basement
+        cards:
+          - type: custom:auto-entities
+            show_empty: false
+            card:
+              type: grid
+              columns: 2
+              square: false
+            card_param: cards
+            sort:
+              method: name
+            filter:
+              include:
+                - domain: light
+                  label: BASEMENT
+                  options:
+                    type: tile
+                    features:
+                      - type: light-brightness
+                      - type: light-color-temp
+                    tap_action:
+                      action: toggle
+
+      # Section: Outside
+      - type: section
+        label: Outside
+        cards:
+          - type: custom:auto-entities
+            show_empty: false
+            card:
+              type: grid
+              columns: 2
+              square: false
+            card_param: cards
+            sort:
+              method: name
+            filter:
+              include:
+                - domain: light
+                  label: OUTSIDE
+                  options:
+                    type: tile
+                    features:
+                      - type: light-brightness
+                    tap_action:
+                      action: toggle
+
+      # Optional: All Lights regardless of level; still uses the LIGHT label
+      - type: section
+        label: All Lights
+        cards:
+          - type: custom:auto-entities
+            show_empty: false
+            card:
+              type: grid
+              columns: 2
+              square: false
+            card_param: cards
+            sort:
+              method: name
+            filter:
+              include:
+                - domain: light
+                  label: LIGHT
+                  options:
+                    type: tile
+                    features:
+                      - type: light-brightness
+                    tap_action:
+                      action: toggle

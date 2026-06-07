@@ -13,7 +13,7 @@ export function QuickActions({ config }: QuickActionsProps) {
 
   // Context-aware: only show relevant actions
   const isEvening = timeOfDay === "evening" || timeOfDay === "night";
-  const projector = entities[config.projector];
+  const projector = entities[config.projector ?? ""];
   const projectorAvailable = projector && projector.state !== "unavailable";
 
   return (

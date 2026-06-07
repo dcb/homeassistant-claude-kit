@@ -1,0 +1,60 @@
+# Exclude sensitive files and secrets
+secrets.yaml
+*.key
+*.token
+*.conf
+ip_bans.yaml
+known_devices.yaml
+.google.token
+.google_assistant_service_account.json
+esphome/secrets.yaml
+*.db
+
+# Exclude Home Assistant internal files and database
+.HA_VERSION
+.cloud
+.storage/
+home-assistant.log
+home-assistant_v2.db
+*.log*
+OZW_Log.txt
+pyozw.sqlite
+zwcfg_*.xml
+*.db-shm
+*.db-wal
+
+# Exclude HACS and UI-generated files that manage themselves
+# HACS manages its own files, but you might want to include your custom
+# YAML files if you manage them manually.
+custom_components/**
+themes/**
+www/community/**
+.cloud/
+.cache/**
+deps/
+esphome/
+tts/
+.HA_VERSION
+__pycache__/
+*.pyc
+
+# Exclude editor/OS specific files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# If you prefer to ignore everything and explicitly whitelist
+# some users use an "ignore everything, then allow specific files" approach
+# which is generally safer for public repositories.
+# To do that, start with this line and remove the specific exclusions above:
+# *
+# Then use '!' to whitelist specific files/folders, e.g.:
+# !configuration.yaml
+# !automations.yaml
+# !scripts.yaml
+# !scenes.yaml
+# !include/**/*.yaml
+www/picture/*.jpg
+www/plates/*.png
+.ha_run.lock

@@ -1,0 +1,32 @@
+- cal_id: horatiu@e-goller.com
+  entities:
+    - device_id: horatiu_e_goller_com
+      ignore_availability: true
+      name: horatiu@e-goller.com
+      track: true
+
+- cal_id: e-goller.com_rldbok5u4194e2q7gojflhe2i4@group.calendar.google.com
+  entities:
+    - device_id: common
+      ignore_availability: true
+      name: Common
+      track: true
+
+- cal_id: en.usa#holiday@group.v.calendar.google.com
+  entities:
+    - device_id: holidays_in_united_states
+      ignore_availability: true
+      name: Holidays in United States
+      track: true
+
+- cal_id: 08ggo4vih4tnelkeh9egdpie1fi1lbql@import.calendar.google.com
+  entities:
+  - device_id: smash_13_thunder
+    ignore_availability: true
+    name: SMASH 13 Thunder
+
+- cal_id: pam_kainz@waylandps.org
+  entities:
+  - device_id: pam_kainz_waylandps_org
+    ignore_availability: true
+    name: pam_kainz@waylandps.org

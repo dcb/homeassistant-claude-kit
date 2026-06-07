@@ -720,6 +720,9 @@ class ReferenceValidator:
         """Validate all references in a single file."""
         if file_path.name == "secrets.yaml":
             return True  # Skip secrets file
+        # google_calendars.yaml uses 'device_id' as a calendar entity slug, not a
+        # device registry ID — skip device reference validation for this file.
+        skip_device_refs = file_path.name == "google_calendars.yaml"
 
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -730,6 +733,11 @@ class ReferenceValidator:
 
         if data is None:
             return True  # Empty file is valid
+
+        # For lists (automations, scripts), skip disabled items to avoid false positives
+        # from stale entity references in disabled automations.
+        if isinstance(data, list):
+            data = [item for item in data if not (isinstance(item, dict) and item.get("enabled") is False)]
 
         # Extract references
         entity_refs = self.extract_entity_references(data)
@@ -805,11 +813,12 @@ class ReferenceValidator:
                             f"references disabled entity '{actual_entity_id}'"
                         )
 
-        # Validate device references
-        for device_id in device_refs:
-            if device_id not in devices:
-                self.errors.append(f"{file_path}: Unknown device '{device_id}'")
-                all_valid = False
+        # Validate device references (skip files that use device_id for non-registry purposes)
+        if not skip_device_refs:
+            for device_id in device_refs:
+                if device_id not in devices:
+                    self.errors.append(f"{file_path}: Unknown device '{device_id}'")
+                    all_valid = False
 
         # Validate area references
         for area_id in area_refs:

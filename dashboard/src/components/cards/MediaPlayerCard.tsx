@@ -88,7 +88,9 @@ export function MediaPlayerCard({
     room.remoteEntity ?? "",
     mediaPlayerId,
   );
-  const appIcon = adapterApp ?? getAppIcon(appName);
+  const appIcon: import("../../lib/tv-adapter").AppDefinition | undefined = adapterApp ?? (
+    appName ? { name: appName, icon: getAppIcon(appName ?? ""), color: "#fff", appId: appName } : undefined
+  );
 
   const callMedia = (service: string, data?: Record<string, unknown>) => {
     if (!connection) return;

@@ -1,0 +1,351 @@
+front_door_snapshot:
+  alias: AI Front Door Notification
+  sequence:
+  - action: ai_task.generate_data
+    metadata: {}
+    data:
+      task_name: 'Update: Generate content from a prompt consisting of text and optionally
+        images'
+      instructions: 'Motion has been detected, compare and very briefly describe what
+        you see in the following sequence of images from my front door camera. What
+        do you think caused the motion alarm? If a person is present, describe them
+        in detail. Do not describe cars, stationary objects, trees, bushes, or buildings.
+        If you see no obvious causes of motion, reply with "No Obvious Motion Detected."
+        Your message needs to be short enough to fit in a phone notification. '
+      entity_id: ai_task.google_ai_task
+      attachments:
+        media_content_id: media-source://camera/camera.front_door_medium_resolution_channel
+        media_content_type: application/vnd.apple.mpegurl
+        metadata:
+          title: Front Door Medium resolution channel
+          thumbnail: /api/camera_proxy/camera.front_door_medium_resolution_channel
+          media_class: video
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://camera
+    response_variable: frontdoor_ai_description
+  - if:
+    - condition: template
+      value_template: '{{ ''No Obvious Motion Detected.'' in frontdoor_ai_description.data
+        }}'
+    then:
+    - stop: ''
+    else:
+    - action: input_text.set_value
+      metadata: {}
+      data:
+        value: '{{ frontdoor_ai_description.data }}'
+      target:
+        entity_id: input_text.front_door_ai_description
+    - action: notify.persistent_notification
+      metadata: {}
+      data:
+        message: '<b>Front Door Motion Detected: {{ frontdoor_ai_description.data
+          }}'
+      enabled: false
+    - action: notify.mobile_app_horis_iphone
+      data:
+        title: Front Door Motion Detected
+        message: '{{ frontdoor_ai_description.data }}'
+      enabled: false
+    - condition: time
+      after: 07:00:00
+      before: '22:00:00'
+      weekday:
+      - sun
+      - mon
+      - tue
+      - wed
+      - thu
+      - fri
+      - sat
+    - action: script.alert_template
+      metadata: {}
+      data:
+        volume: 35
+        delay:
+          hours: 0
+          minutes: 0
+          seconds: 5
+        speaker:
+          entity_id: media_player.unnamed_room
+          media_content_id: media-source://media_source/local/chime-small.mp3
+          media_content_type: audio/mpeg
+          metadata:
+            title: chime-small.mp3
+            thumbnail:
+            media_class: music
+            children_media_class:
+            navigateIds:
+            - {}
+            - media_content_type: app
+              media_content_id: media-source://media_source
+        message: '{{ frontdoor_ai_description.data }}'
+  mode: single
+ai_backyard_notification:
+  alias: AI Backyard Notification
+  sequence:
+  - action: ai_task.generate_data
+    metadata: {}
+    data:
+      instructions: 'Motion has been detected, compare and very briefly describe what
+        you see in the following sequence of images from my backyard camera. What
+        do you think caused the motion alarm? If a person or car or an animal is present,
+        describe them in detail. Do not describe stationary objects or buildings.
+        If you see no obvious causes of motion, reply with "No Obvious Motion Detected."
+        Your message needs to be short enough to fit in a phone notification. '
+      task_name: Backyard AI Motion Description
+      entity_id: ai_task.google_ai_task
+      attachments:
+        media_content_id: media-source://camera/camera.g5_pro_medium_resolution_channel
+        media_content_type: application/vnd.apple.mpegurl
+        metadata:
+          title: Backyard Medium resolution channel
+          thumbnail: /api/camera_proxy/camera.g5_pro_medium_resolution_channel
+          media_class: video
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://camera
+    response_variable: backyard_ai_description
+  - if:
+    - condition: template
+      value_template: '{{ ''No Obvious Motion Detected.'' in backyard_ai_description.data
+        }}'
+    then:
+    - stop: ''
+    else:
+    - action: input_text.set_value
+      metadata: {}
+      data:
+        value: '{{ backyard_ai_description.data }}'
+      target:
+        entity_id: input_text.backyard_ai_description
+    - action: notify.persistent_notification
+      metadata: {}
+      data:
+        message: '<b>Backyard Motion Detected: {{ backyard_ai_description.data }} '
+      enabled: true
+    - action: notify.mobile_app_horis_iphone
+      data:
+        title: Backyard Motion Detected
+        message: '{{ backyard_ai_description.data }}'
+      enabled: true
+  mode: single
+  description: ''
+alarm_script:
+  alias: Alarm Script
+  sequence:
+  - alias: Generate unique ID
+    variables:
+      scene_id: '{{ slugify(this.context.id) }}'
+  - alias: Save media player state
+    data:
+      scene_id: '{{ scene_id }}'
+      snapshot_entities: '{{ speaker.entity_id }}'
+    action: scene.create
+  - alias: Set volume
+    target:
+      entity_id: '{{ speaker.entity_id }}'
+    data:
+      volume_level: '{{ volume | default(0.5) }}'
+    action: media_player.volume_set
+  - parallel:
+    - alias: Play media
+      target:
+        entity_id: '{{ speaker.entity_id }}'
+      data:
+        media_content_id: '{{ speaker.media_content_id }}'
+        media_content_type: '{{ speaker.media_content_type }}'
+      action: media_player.play_media
+    - alias: Wait for media to start playing
+      wait_template: '{{ is_state(speaker.entity_id, ''playing'') }}'
+      continue_on_timeout: true
+      timeout: 00:00:30
+  - variables:
+      player_state: '{{ states(speaker.entity_id) }}'
+  - alias: Wait until media is finished playing
+    wait_template: '{{ not is_state(speaker.entity_id, ''playing'') }}'
+    continue_on_timeout: true
+    timeout: 00:00:30
+  - parallel:
+    - alias: Say something TTS
+      action: media_player.play_media
+      data:
+        media_content_id: 'media-source://tts/tts.google_cloud?message="{{ message
+          }}"
+
+          '
+        media_content_type: music
+      target:
+        entity_id: '{{ speaker.entity_id }}'
+    - alias: Wait for media to start playing
+      wait_template: '{{ is_state(speaker.entity_id, ''playing'') }}'
+      continue_on_timeout: true
+      timeout: 00:00:30
+  - alias: Wait until media is finished playing
+    wait_template: '{{ not is_state(speaker.entity_id, ''playing'') }}'
+    continue_on_timeout: true
+    timeout: 00:00:30
+  - alias: Reset volume
+    target:
+      entity_id: '{{ speaker.entity_id }}'
+    data:
+      volume_level: 0.3
+    action: media_player.volume_set
+  - alias: Restore media player state
+    target:
+      entity_id: scene.{{ scene_id }}
+    action: scene.turn_on
+  - alias: Garbage collection
+    target:
+      entity_id: scene.{{ scene_id }}
+    action: scene.delete
+  icon: mdi:alarm
+  fields:
+    speaker:
+      name: speaker
+      selector:
+        media: {}
+      required: true
+    volume:
+      name: volume
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.1
+      default: 0.3
+      required: false
+    message:
+      name: message
+      selector:
+        text: {}
+      required: true
+      default: Please replace with your alarm message
+  mode: single
+  description: ''
+alert_template:
+  alias: Alert Template
+  sequence:
+  - alias: Play media
+    action: media_player.play_media
+    target:
+      entity_id: '{{ speaker.entity_id }}'
+    data:
+      announce: true
+      extra:
+        volume: '{{ volume | default(50) }}'
+      media:
+        media_content_id: '{{ speaker.media_content_id }}'
+        media_content_type: '{{ speaker.media_content_type }}'
+        metadata: {}
+  - delay:
+      hours: '{{ delay.hours }}'
+      minutes: '{{ delay.minutes }}'
+      seconds: '{{ delay.seconds }}'
+      milliseconds: 0
+  - alias: Say something TTS
+    action: media_player.play_media
+    target:
+      entity_id: '{{ speaker.entity_id }}'
+    data:
+      announce: true
+      extra:
+        volume: '{{ volume | default(50) }}'
+      media:
+        media_content_id: 'media-source://tts/tts.google_cloud?message="{{ message
+          }}"
+
+          '
+        media_content_type: music
+        metadata: {}
+  icon: mdi:alarm
+  fields:
+    speaker:
+      name: speaker
+      selector:
+        media: {}
+      required: true
+    volume:
+      name: volume
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+      default: 50
+      required: false
+    message:
+      name: message
+      selector:
+        text: {}
+      required: true
+      default: Please replace with your alarm message
+    delay:
+      selector:
+        duration: {}
+      name: delay
+      description: delay between the alert media and TTS
+      required: true
+      default:
+        hours: 0
+        minutes: 0
+        seconds: 5
+  mode: single
+  description: ''
+ai_driveway_notification_new:
+  sequence:
+  - action: ai_task.generate_data
+    metadata: {}
+    data:
+      task_name: Motion Detection Task
+      instructions: 'Motion has been detected, compare and very briefly describe what
+        you see in the following sequence of images from my driveway camera. What
+        do you think caused the motion alarm? If a person or car is present, describe
+        them in detail. Do not describe stationary objects or buildings. If you see
+        no obvious causes of motion, reply with "No Obvious Motion Detected." Your
+        message needs to be short enough to fit in a phone notification. '
+      entity_id: ai_task.google_ai_task
+      attachments:
+        media_content_id: media-source://camera/camera.garage_outside_medium_resolution_channel
+        media_content_type: application/vnd.apple.mpegurl
+        metadata:
+          title: Garage Outside Medium resolution channel
+          thumbnail: /api/camera_proxy/camera.garage_outside_medium_resolution_channel
+          media_class: video
+          children_media_class:
+          navigateIds:
+          - {}
+          - media_content_type: app
+            media_content_id: media-source://camera
+    response_variable: driveway_ai_description
+  - if:
+    - condition: template
+      value_template: '{{ ''No Obvious Motion Detected.'' in driveway_ai_description.data
+        }}'
+    then:
+    - stop: ''
+    else:
+    - action: input_text.set_value
+      metadata: {}
+      data:
+        value: '{{ driveway_ai_description.text }}'
+      target:
+        entity_id: input_text.driveway_ai_description
+    - action: notify.persistent_notification
+      metadata: {}
+      data:
+        message: "<b>Driveway Motion Detected: \n{{ driveway_ai_description.data }}"
+      enabled: true
+    - action: notify.mobile_app_horis_iphone
+      data:
+        title: Driveway Motion Detected
+        message: '{{ driveway_ai_description.data }}'
+      enabled: true
+  alias: AI Driveway Notification
+  description: ''
+  icon: mdi:brain

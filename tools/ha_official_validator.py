@@ -23,6 +23,18 @@ class HAOfficialValidator:
 
     def run_ha_check_config(self) -> bool:
         """Run Home Assistant's official check_config script."""
+        # Skip gracefully if homeassistant package isn't installed
+        check = subprocess.run(
+            [sys.executable, "-c", "import homeassistant"],
+            capture_output=True,
+        )
+        if check.returncode != 0:
+            self.warnings.append(
+                "homeassistant package not installed — skipping official validation. "
+                "Install with: pip install homeassistant"
+            )
+            return True
+
         try:
             # Use the hass command to check configuration
             cmd = [

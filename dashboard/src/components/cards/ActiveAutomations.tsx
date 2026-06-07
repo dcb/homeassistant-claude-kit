@@ -38,7 +38,7 @@ export function ActiveAutomations({ config }: ActiveAutomationsProps) {
     (acGround?.attributes?.hvac_action === "heating") ||
     (acBedroom?.attributes?.hvac_action === "heating");
   if (acHeating) {
-    const spareE = entities[config.sparePower];
+    const spareE = entities[config.sparePower ?? ""];
     const spareW = toWatts(spareE?.state, spareE?.attributes?.unit_of_measurement as string);
     const label = spareW !== null
       ? `AC heating from solar (${formatPower(spareW)} spare)`

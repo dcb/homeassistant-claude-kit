@@ -14,12 +14,21 @@ custom_components/
 custom_icons/
 themes/
 
+# Claude Code HA tools (installed separately via install.sh, not managed here)
+claude-code-ha/
+
 # Runtime/cache directories
 .cloud/
+.cache/
 deps/
 tts/
 .uuid
 __pycache__/
+
+# Database files (managed by HA at runtime)
+*.db
+*.db-shm
+*.db-wal
 
 # Large directories not needed for config management
 backups/
@@ -29,6 +38,9 @@ www/
 
 # Secrets (real passwords live on HA, local file is placeholder)
 secrets.yaml
+
+# Git metadata (local repo, not needed on HA)
+.git/
 
 # Temporary files
 *.tmp

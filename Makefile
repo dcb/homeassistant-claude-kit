@@ -63,7 +63,7 @@ push: check-env
 	@echo "$(GREEN)Validating configuration before push...$(NC)"
 	@$(MAKE) validate
 	@echo "$(GREEN)Validation passed! Pushing to Home Assistant...$(NC)"
-	@rsync -avz --delete --exclude-from=.rsync-excludes-push "$(LOCAL_CONFIG_PATH)" "$(SSH_USER)@$(HA_HOST):$(HA_REMOTE_PATH)"
+	@rsync -avz --rsync-path="sudo rsync" --delete --exclude-from=.rsync-excludes-push "$(LOCAL_CONFIG_PATH)" "$(SSH_USER)@$(HA_HOST):$(HA_REMOTE_PATH)"
 	@echo "$(GREEN)Configuration pushed successfully!$(NC)"
 	@echo "$(GREEN)Reloading Home Assistant configuration...$(NC)"
 	@. $(VENV_PATH)/bin/activate && python $(TOOLS_PATH)/reload_config.py
@@ -72,7 +72,7 @@ push: check-env
 # Dry-run diff — preview what push would sync without making changes
 diff: check-env
 	@echo "$(GREEN)Previewing changes that would be pushed to Home Assistant...$(NC)"
-	@rsync -avzn --delete --exclude-from=.rsync-excludes-push "$(LOCAL_CONFIG_PATH)" "$(SSH_USER)@$(HA_HOST):$(HA_REMOTE_PATH)"
+	@rsync -avzn --rsync-path="sudo rsync" --delete --exclude-from=.rsync-excludes-push "$(LOCAL_CONFIG_PATH)" "$(SSH_USER)@$(HA_HOST):$(HA_REMOTE_PATH)"
 	@echo "$(YELLOW)(Dry run — no files were changed)$(NC)"
 
 # Run all validation tests
@@ -97,7 +97,7 @@ setup:
 	@echo "$(GREEN)Setting up Python environment...$(NC)"
 	@python3 -m venv $(VENV_PATH)
 	@. $(VENV_PATH)/bin/activate && pip install --upgrade pip
-	@. $(VENV_PATH)/bin/activate && pip install homeassistant voluptuous pyyaml jsonschema requests
+	@. $(VENV_PATH)/bin/activate && pip install pyyaml voluptuous jsonschema requests
 	@echo "$(GREEN)Setup complete!$(NC)"
 
 # Show configuration status
@@ -220,8 +220,8 @@ deploy-dashboard: check-env
 	@echo "$(GREEN)Building dashboard...$(NC)"
 	@cd dashboard && npm run build
 	@echo "$(GREEN)Deploying to Home Assistant...$(NC)"
-	@rsync -avz --delete dashboard/dist/ "$(SSH_USER)@$(HA_HOST):$(HA_REMOTE_PATH)www/custom-dashboard/"
-	@rsync -avz dashboard/panel.js "$(SSH_USER)@$(HA_HOST):$(HA_REMOTE_PATH)www/custom-dashboard/panel.js"
+	@rsync -avz --rsync-path="sudo rsync" --delete dashboard/dist/ "$(SSH_USER)@$(HA_HOST):$(HA_REMOTE_PATH)www/custom-dashboard/"
+	@rsync -avz --rsync-path="sudo rsync" dashboard/panel.js "$(SSH_USER)@$(HA_HOST):$(HA_REMOTE_PATH)www/custom-dashboard/panel.js"
 	@echo "$(GREEN)Dashboard deployed! Hard-refresh browser to load new version.$(NC)"
 
 # Privacy mode targets
