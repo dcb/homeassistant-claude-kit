@@ -1,0 +1,844 @@
+###############################################################################
+# Irrigation Automations
+#
+# HA-primary irrigation: your valve controller (Hydrawise / OpenSprinkler /
+# Rachio / …) is treated as a dumb valve actuator. Home Assistant owns all
+# scheduling, skip logic, cycle-and-soak sequencing, and notifications.
+#
+# Zones are split into Front/Back groups and staggered across days to fit a
+# short morning watering window. A single morning report summarises the run.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Placeholders to replace:
+#   your_notify_target            — notify service (e.g. notify.mobile_app_phone)
+#                                   The original config notified two phones; add
+#                                   a second `notify.…` action if you want that.
+#   your_silence_hours            — binary_sensor that is ON during quiet/sleep
+#                                   hours (e.g. night mode). The morning report
+#                                   fires when this turns OFF.
+#   your_climate_mode             — input_select used by the seasonal auto-toggle
+#                                   (Winter | Winter-Eco | Spring-Autumn | Summer)
+#   weather.your_forecast         — your weather entity (wind_speed attribute)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Zones (genericised — two examples matching the dashboard):
+#   front_zone_1  "Front Zone 1"  group: front
+#   back_zone_1   "Back Zone 1"   group: back
+#
+# Every zone derives its entity IDs from its slug (matches the dashboard's
+# entities.ts):
+#   valve.{slug}                              — the controller's valve entity
+#   binary_sensor.{slug}_watering             — "actively watering" target for
+#                                               the controller's start service
+#   input_boolean.irrigation_zone_{slug}_enabled / _manual_run / _running
+#   input_number.irrigation_zone_{slug}_cycle_minutes / _cycles / _soak_minutes
+#                                            / _seasonal_pct
+#   input_select.irrigation_zone_{slug}_group  (front | back)
+#
+# TO ADD A ZONE: append a block to `all_zones` in the Daily Scheduler, add the
+# slug to every flat valve/sentinel list below (manual stop, weather abort,
+# hard stop), add it to `zone_map` + the manual-run trigger list, create the
+# matching helpers (see helpers.yaml `# --- Irrigation ---`), and add a line to
+# IRRIGATION_ZONES in the dashboard entities.ts.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Controller start service:
+#   This template uses `hydrawise.start_watering` as the per-zone "run for N
+#   minutes" service because Hydrawise (and most cloud controllers) do NOT honor
+#   cycle-and-soak on a manual/API start — HA drives the soak cycles itself.
+#   Replace `hydrawise.start_watering` (and its `duration:` data) with your
+#   controller's equivalent timed-run service. If your controller has no timed
+#   start, use `valve.open_valve` on `valve.{slug}` + a `delay:` + `valve.close_valve`.
+#
+# Optional connectivity sensor:
+#   binary_sensor.irrigation_connectivity — if your controller exposes an
+#   online/offline sensor, the scheduler attempts an inline reload-recovery
+#   before giving up. If you have no such sensor, delete the connectivity
+#   recovery block and the mid-run valve reload step.
+###############################################################################
+
+# -- Daily Scheduler --
+
+- id: 'irrigation_daily_scheduler'
+  alias: Irrigation - Daily Scheduler
+  description: >
+    Core irrigation automation. Triggers at the configured start time OR by
+    input_boolean.irrigation_run_now for on-demand runs. Evaluates skip
+    conditions, determines which group runs today, and runs each enabled
+    zone with cycle-and-soak sequencing. Includes inline controller recovery
+    (5-min retry window) and per-zone mid-run failure handling. Uses
+    mode: restart so manual stop and weather abort can interrupt.
+  triggers:
+  - trigger: time_pattern
+    minutes: "/1"
+    id: scheduled
+  - trigger: state
+    entity_id: input_boolean.irrigation_run_now
+    to: 'on'
+    id: manual
+  conditions:
+  - condition: template
+    value_template: >
+      {% if trigger.id == 'manual' %}
+        true
+      {% else %}
+        {% set h = states('input_number.irrigation_start_time_hour') | int(5) %}
+        {% set m = states('input_number.irrigation_start_time_minute') | int(0) %}
+        {{ now().hour == h and now().minute == m }}
+      {% endif %}
+  - condition: state
+    entity_id: input_boolean.irrigation_enabled
+    state: 'on'
+  actions:
+  # Clear the manual trigger immediately so it doesn't stay stuck on.
+  - if:
+    - condition: trigger
+      id: manual
+    then:
+    - action: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.irrigation_run_now
+  # Clear any leftover per-zone sentinels from a previously-killed run
+  # (mode: restart or crash). Safe: if a manual run is in progress, this
+  # will also clear it, but a manual run and the scheduler should not
+  # overlap at the start time anyway.
+  - action: input_boolean.turn_off
+    target:
+      entity_id:
+      - input_boolean.irrigation_zone_front_zone_1_running
+      - input_boolean.irrigation_zone_back_zone_1_running
+      # Add one line per zone: input_boolean.irrigation_zone_{slug}_running
+  # Reset the mid-run skipped-zones accumulator for this run.
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_skipped_zones
+    data:
+      value: ""
+  - variables:
+      # Pause check (date-based, no decrement needed)
+      pause_until: "{{ states('input_datetime.irrigation_pause_until') }}"
+      is_paused: >
+        {% if pause_until in ['unknown', 'unavailable', ''] %}
+          false
+        {% else %}
+          {{ as_timestamp(pause_until) > as_timestamp(now().strftime('%Y-%m-%d')) }}
+        {% endif %}
+      pause_days_remaining: >
+        {% if pause_until in ['unknown', 'unavailable', ''] %}
+          0
+        {% else %}
+          {% set remaining = (as_timestamp(pause_until) - as_timestamp(now().strftime('%Y-%m-%d'))) / 86400 %}
+          {{ remaining | int if remaining > 0 else 0 }}
+        {% endif %}
+
+      # Group rotation
+      freq: "{{ states('input_select.irrigation_frequency') }}"
+      heat: "{{ is_state('input_boolean.irrigation_heat_boost', 'on') }}"
+      dow: "{{ now().isoweekday() }}"
+      doy: "{{ now().timetuple().tm_yday }}"
+      today_group: >
+        {% if freq == 'daily' or heat %}
+          both
+        {% elif freq == 'every_other_day' %}
+          {{ 'front' if (doy | int) % 2 == 0 else 'back' }}
+        {% elif freq == 'every_2_days' %}
+          {% set cycle = (doy | int) % 3 %}
+          {% if cycle == 0 %}front{% elif cycle == 1 %}back{% else %}none{% endif %}
+        {% elif freq == 'every_3_days' %}
+          {% set cycle = (doy | int) % 4 %}
+          {% if cycle == 0 %}front{% elif cycle == 1 %}back{% else %}none{% endif %}
+        {% else %}
+          none
+        {% endif %}
+
+      # Zone definitions (ordered by group).
+      # Add one block per zone, following this exact shape. The slug must match
+      # the helper names, the valve/watering entity IDs, and the dashboard.
+      all_zones:
+        - slug: front_zone_1
+          name: Front Zone 1
+          group: "{{ states('input_select.irrigation_zone_front_zone_1_group') }}"
+          valve: valve.front_zone_1
+          watering: binary_sensor.front_zone_1_watering
+          enabled: "{{ is_state('input_boolean.irrigation_zone_front_zone_1_enabled', 'on') }}"
+          cycle_min: "{{ states('input_number.irrigation_zone_front_zone_1_cycle_minutes') | float(5) }}"
+          cycles: "{{ states('input_number.irrigation_zone_front_zone_1_cycles') | int(1) }}"
+          soak_min: "{{ states('input_number.irrigation_zone_front_zone_1_soak_minutes') | int(20) }}"
+          seasonal_pct: "{{ states('input_number.irrigation_zone_front_zone_1_seasonal_pct') | int(100) }}"
+        - slug: back_zone_1
+          name: Back Zone 1
+          group: "{{ states('input_select.irrigation_zone_back_zone_1_group') }}"
+          valve: valve.back_zone_1
+          watering: binary_sensor.back_zone_1_watering
+          enabled: "{{ is_state('input_boolean.irrigation_zone_back_zone_1_enabled', 'on') }}"
+          cycle_min: "{{ states('input_number.irrigation_zone_back_zone_1_cycle_minutes') | float(5) }}"
+          cycles: "{{ states('input_number.irrigation_zone_back_zone_1_cycles') | int(1) }}"
+          soak_min: "{{ states('input_number.irrigation_zone_back_zone_1_soak_minutes') | int(20) }}"
+          seasonal_pct: "{{ states('input_number.irrigation_zone_back_zone_1_seasonal_pct') | int(100) }}"
+  # ── Paused ──
+  - if:
+    - condition: template
+      value_template: "{{ is_paused }}"
+    then:
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.irrigation_last_run_status
+      data:
+        value: paused
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.irrigation_last_run_details
+      data:
+        value: "Paused until {{ pause_until }} ({{ pause_days_remaining }} days remaining)"
+    - action: input_datetime.set_datetime
+      target:
+        entity_id: input_datetime.irrigation_last_run_date
+      data:
+        datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+    - stop: "paused"
+
+  # ── Weather skip ──
+  # All skip binary_sensors are template sensors you create in configuration.yaml
+  # (see docs/system-irrigation.md → Weather Data Layer). irrigation_skip_any is
+  # the OR of the individual skip sensors.
+  - if:
+    - condition: state
+      entity_id: binary_sensor.irrigation_skip_any
+      state: 'on'
+    then:
+    - variables:
+        skip_reasons: >
+          {% set ns = namespace(reasons=[]) %}
+          {% if is_state('binary_sensor.irrigation_skip_rain_forecast', 'on') %}
+            {% set ns.reasons = ns.reasons + ['rain forecast ' ~ states('sensor.irrigation_precip_forecast_24h') ~ 'mm'] %}
+          {% endif %}
+          {% if is_state('binary_sensor.irrigation_skip_rain_actual', 'on') %}
+            {% set ns.reasons = ns.reasons + ['rained ' ~ ((states('sensor.irrigation_rain_yesterday') | float(0)) + (states('sensor.irrigation_rain_today') | float(0))) | round(1) ~ 'mm in 48h'] %}
+          {% endif %}
+          {% if is_state('binary_sensor.irrigation_skip_wind', 'on') %}
+            {% set ns.reasons = ns.reasons + ['wind ' ~ state_attr('weather.your_forecast', 'wind_speed') ~ ' km/h'] %}
+          {% endif %}
+          {% if is_state('binary_sensor.irrigation_skip_freeze', 'on') %}
+            {% set ns.reasons = ns.reasons + ['freeze ' ~ states('sensor.your_outdoor_temperature') ~ '°C'] %}
+          {% endif %}
+          {% if is_state('binary_sensor.irrigation_skip_seasonal_cold', 'on') %}
+            {% set ns.reasons = ns.reasons + ['seasonal cold ' ~ states('sensor.outdoor_temperature_3_day_average') ~ '°C avg'] %}
+          {% endif %}
+          {{ ns.reasons | join(', ') }}
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.irrigation_last_run_status
+      data:
+        value: skipped
+    - action: input_text.set_value
+      target:
+        entity_id: input_text.irrigation_last_run_details
+      data:
+        value: "Skipped — {{ skip_reasons }}"
+    - action: input_datetime.set_datetime
+      target:
+        entity_id: input_datetime.irrigation_last_run_date
+      data:
+        datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+    - stop: "weather skip"
+
+  # ── No group scheduled today ──
+  - if:
+    - condition: template
+      value_template: "{{ today_group == 'none' }}"
+    then:
+    - stop: "no group today"
+
+  # ── Controller offline: inline recovery (5-min window, exits early on recovery) ──
+  # OPTIONAL — only if your controller exposes binary_sensor.irrigation_connectivity.
+  # Delete this whole block if you have no connectivity sensor.
+  - if:
+    - condition: state
+      entity_id: binary_sensor.irrigation_connectivity
+      state: 'off'
+    then:
+    # First reload + 2-min wait
+    - action: homeassistant.reload_config_entry
+      data:
+        entry_id: "{{ config_entry_id('binary_sensor.irrigation_connectivity') }}"
+      continue_on_error: true
+    - wait_template: "{{ is_state('binary_sensor.irrigation_connectivity', 'on') }}"
+      timeout:
+        minutes: 2
+    # Second reload + 3-min wait (only if still offline)
+    - if:
+      - condition: template
+        value_template: "{{ not is_state('binary_sensor.irrigation_connectivity', 'on') }}"
+      then:
+      - action: homeassistant.reload_config_entry
+        data:
+          entry_id: "{{ config_entry_id('binary_sensor.irrigation_connectivity') }}"
+        continue_on_error: true
+      - wait_template: "{{ is_state('binary_sensor.irrigation_connectivity', 'on') }}"
+        timeout:
+          minutes: 3
+    # If still offline after 5 min total, give up
+    - if:
+      - condition: template
+        value_template: "{{ not is_state('binary_sensor.irrigation_connectivity', 'on') }}"
+      then:
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.irrigation_last_run_status
+        data:
+          value: skipped
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.irrigation_last_run_details
+        data:
+          value: "Controller offline — recovery failed after 5 min"
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.irrigation_last_run_date
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+      - stop: "connectivity recovery failed"
+
+  # ── Run irrigation ──
+  - variables:
+      zones_to_run: >
+        {% set ns = namespace(zones=[]) %}
+        {% for z in all_zones %}
+          {% if z.enabled and (today_group == 'both' or z.group == today_group) %}
+            {% set ns.zones = ns.zones + [z] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.zones }}
+      group_label: >
+        {% if today_group == 'both' %}All zones{% elif today_group == 'front' %}Front group{% else %}Back group{% endif %}
+  - if:
+    - condition: template
+      value_template: "{{ zones_to_run | length == 0 }}"
+    then:
+    - stop: "no zones enabled"
+
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_status
+    data:
+      value: running
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_details
+    data:
+      value: "{{ group_label }} — {{ zones_to_run | length }} zones"
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.irrigation_last_run_date
+    data:
+      datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+  # Run each zone
+  - variables:
+      run_start: "{{ now().strftime('%H:%M') }}"
+  - repeat:
+      for_each: "{{ zones_to_run }}"
+      sequence:
+      # Respect outer stop (manual stop / weather abort / hard stop).
+      # A failed condition halts the whole repeat, which is what we want:
+      # if the user stopped everything, skip all remaining zones.
+      - condition: template
+        value_template: "{{ states('input_text.irrigation_last_run_status') == 'running' }}"
+      - variables:
+          zone: "{{ repeat.item }}"
+          sentinel: "input_boolean.irrigation_zone_{{ zone.slug }}_running"
+          effective_minutes: "{{ ((zone.cycle_min | float) * (zone.seasonal_pct | int) / 100) | round(0) | int }}"
+          effective_minutes_safe: "{{ [effective_minutes | int, 1] | max }}"
+          zone_cycles: "{{ zone.cycles | int }}"
+          zone_soak: "{{ zone.soak_min | int }}"
+      # Mid-run valve availability check: try a reload if the valve is
+      # unavailable. If recovery fails, record the zone as skipped and
+      # continue to the next one (don't halt the whole run).
+      # (The reload targets the connectivity sensor's config entry — change
+      # the entity if your controller exposes a different one, or drop the
+      # reload step entirely if you have no connectivity sensor.)
+      - if:
+        - condition: template
+          value_template: "{{ states(zone.valve) in ['unavailable', 'unknown'] }}"
+        then:
+        - action: homeassistant.reload_config_entry
+          data:
+            entry_id: "{{ config_entry_id('binary_sensor.irrigation_connectivity') }}"
+          continue_on_error: true
+        - delay:
+            seconds: 30
+      - choose:
+        # Zone valve still unavailable — skip this zone, continue to next.
+        - conditions:
+          - condition: template
+            value_template: "{{ states(zone.valve) in ['unavailable', 'unknown'] }}"
+          sequence:
+          - action: input_text.set_value
+            target:
+              entity_id: input_text.irrigation_last_run_skipped_zones
+            data:
+              value: >
+                {% set existing = states('input_text.irrigation_last_run_skipped_zones') %}
+                {% if existing in ['unknown', 'unavailable', ''] %}
+                  {{ zone.slug }}
+                {% else %}
+                  {{ existing }}, {{ zone.slug }}
+                {% endif %}
+        # Zone healthy — run its cycle/soak sequence.
+        default:
+        - action: input_boolean.turn_on
+          target:
+            entity_id: "{{ sentinel }}"
+        - repeat:
+            count: "{{ zone_cycles }}"
+            sequence:
+            # Per-zone abort: if the sentinel was cleared (Stop button, weather
+            # abort, manual stop, hard stop), skip remaining cycles by gating
+            # each iteration on the sentinel state.
+            - if:
+              - condition: template
+                value_template: "{{ is_state(sentinel, 'on') }}"
+              then:
+              # Replace with your controller's timed-run service.
+              - action: hydrawise.start_watering
+                target:
+                  entity_id: "{{ zone.watering }}"
+                data:
+                  duration: "{{ effective_minutes_safe }}"
+                continue_on_error: true
+              # Trust the controller to honor the duration we sent. HA's view
+              # of valve state often lags the cloud reporting by minutes, so
+              # waiting on valve.open/closed is unreliable. Instead wait the
+              # duration we asked for (plus a small buffer), exiting early if
+              # the sentinel is cleared (Stop button / abort).
+              - wait_template: "{{ is_state(sentinel, 'off') }}"
+                timeout:
+                  minutes: "{{ effective_minutes_safe | int + 1 }}"
+              - if:
+                - condition: template
+                  value_template: "{{ zone_cycles > 1 and repeat.index < zone_cycles and is_state(sentinel, 'on') }}"
+                then:
+                - delay:
+                    minutes: "{{ zone_soak }}"
+        - action: input_boolean.turn_off
+          target:
+            entity_id: "{{ sentinel }}"
+
+  # Record completion
+  - variables:
+      skipped: "{{ states('input_text.irrigation_last_run_skipped_zones') }}"
+      total_zones: "{{ zones_to_run | length }}"
+      skipped_count: >
+        {% if skipped in ['unknown', 'unavailable', ''] %}
+          0
+        {% else %}
+          {{ skipped.split(', ') | length }}
+        {% endif %}
+      completed_count: "{{ (total_zones | int) - (skipped_count | int) }}"
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_status
+    data:
+      value: completed
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_details
+    data:
+      value: >
+        {% if skipped_count | int == 0 %}
+          {{ group_label }} completed — {{ total_zones }} zones, started {{ run_start }}
+        {% else %}
+          {{ group_label }} partial — {{ completed_count }} of {{ total_zones }} zones, skipped: {{ skipped }} (started {{ run_start }})
+        {% endif %}
+  mode: restart
+
+# -- Manual Stop --
+
+- id: 'irrigation_manual_stop'
+  alias: Irrigation - Manual Stop
+  description: >
+    Dashboard "Stop All" button. Closes all irrigation valves immediately
+    and records the stop for the morning report.
+  triggers:
+  - trigger: state
+    entity_id: input_boolean.irrigation_manual_stop
+    to: 'on'
+  conditions: []
+  actions:
+  - action: valve.close_valve
+    target:
+      entity_id:
+      - valve.front_zone_1
+      - valve.back_zone_1
+      # Add one line per zone: valve.{slug}
+  # Clear all per-zone running sentinels so any in-flight zone loops abort.
+  - action: input_boolean.turn_off
+    target:
+      entity_id:
+      - input_boolean.irrigation_zone_front_zone_1_running
+      - input_boolean.irrigation_zone_back_zone_1_running
+      # Add one line per zone: input_boolean.irrigation_zone_{slug}_running
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_status
+    data:
+      value: manually_stopped
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_details
+    data:
+      value: "Manually stopped at {{ now().strftime('%H:%M') }}"
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.irrigation_last_run_date
+    data:
+      datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+  - action: input_boolean.turn_off
+    target:
+      entity_id: input_boolean.irrigation_manual_stop
+  mode: single
+
+# -- Mid-Run Weather Abort --
+
+- id: 'irrigation_weather_abort'
+  alias: Irrigation - Weather Abort
+  description: >
+    If wind picks up or significant rain starts during a run,
+    stop all zones immediately.
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.irrigation_skip_wind
+    to: 'on'
+  - trigger: state
+    entity_id: binary_sensor.irrigation_skip_rain_actual
+    to: 'on'
+  conditions:
+  - condition: template
+    value_template: "{{ states('input_text.irrigation_last_run_status') == 'running' }}"
+  actions:
+  - action: valve.close_valve
+    target:
+      entity_id:
+      - valve.front_zone_1
+      - valve.back_zone_1
+      # Add one line per zone: valve.{slug}
+  - action: input_boolean.turn_off
+    target:
+      entity_id:
+      - input_boolean.irrigation_zone_front_zone_1_running
+      - input_boolean.irrigation_zone_back_zone_1_running
+      # Add one line per zone: input_boolean.irrigation_zone_{slug}_running
+  - variables:
+      abort_reason: >
+        {% if is_state('binary_sensor.irrigation_skip_wind', 'on') %}
+          wind {{ state_attr('weather.your_forecast', 'wind_speed') }} km/h
+        {% else %}
+          rain detected
+        {% endif %}
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_status
+    data:
+      value: aborted
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_details
+    data:
+      value: "Aborted at {{ now().strftime('%H:%M') }} — {{ abort_reason }}"
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.irrigation_last_run_date
+    data:
+      datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+  mode: single
+
+# -- Hard Stop --
+
+- id: 'irrigation_hard_stop'
+  alias: Irrigation - Hard Stop
+  description: >
+    Safety cutoff at the configured end hour (default 08:00). Use this to
+    guarantee watering never overruns into a window where sprinklers are at
+    risk (people/pets in the yard, etc.).
+  triggers:
+  - trigger: time_pattern
+    minutes: "0"
+  conditions:
+  - condition: template
+    value_template: >
+      {{ now().hour == states('input_number.irrigation_end_hour') | int(8) }}
+  - condition: template
+    value_template: >
+      {{ states('valve.front_zone_1') == 'open'
+         or states('valve.back_zone_1') == 'open' }}
+      {# Add one OR clause per zone: or states('valve.{slug}') == 'open' #}
+  actions:
+  - action: valve.close_valve
+    target:
+      entity_id:
+      - valve.front_zone_1
+      - valve.back_zone_1
+      # Add one line per zone: valve.{slug}
+  - action: input_boolean.turn_off
+    target:
+      entity_id:
+      - input_boolean.irrigation_zone_front_zone_1_running
+      - input_boolean.irrigation_zone_back_zone_1_running
+      # Add one line per zone: input_boolean.irrigation_zone_{slug}_running
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_status
+    data:
+      value: hard_stopped
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.irrigation_last_run_details
+    data:
+      value: "Hard-stopped at {{ now().strftime('%H:%M') }} — end hour reached"
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.irrigation_last_run_date
+    data:
+      datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+  mode: single
+
+# -- Morning Report --
+
+- id: 'irrigation_morning_report'
+  alias: Irrigation - Morning Report
+  description: >
+    Send a single summary notification when quiet/silence hours end.
+    Covers the entire morning watering window in one message.
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.your_silence_hours
+    to: 'off'
+  conditions:
+  - condition: template
+    value_template: >
+      {% set last_date = states('input_datetime.irrigation_last_run_date') %}
+      {% set status = states('input_text.irrigation_last_run_status') %}
+      {{ last_date not in ['unknown', 'unavailable', '']
+         and status not in ['unknown', 'unavailable', '']
+         and as_timestamp(last_date) > as_timestamp(today_at('00:00')) }}
+  actions:
+  - variables:
+      status: "{{ states('input_text.irrigation_last_run_status') }}"
+      details: "{{ states('input_text.irrigation_last_run_details') }}"
+      heat_active: "{{ is_state('input_boolean.irrigation_heat_boost', 'on') }}"
+      message: >
+        {% if status == 'completed' %}
+          Irrigation: {{ details }}{% if heat_active %} (heat wave mode){% endif %}
+        {% elif status in ['skipped', 'paused', 'aborted', 'hard_stopped', 'manually_stopped'] %}
+          Irrigation: {{ details }}
+        {% else %}
+          Irrigation: {{ status }} — {{ details }}
+        {% endif %}
+  # The original config notified two phones; add a second notify action for a
+  # second recipient if you want that.
+  - action: notify.your_notify_target
+    data:
+      title: Irrigation Report
+      message: "{{ message }}"
+      data:
+        push:
+          interruption-level: time-sensitive
+  mode: single
+
+# -- Heat Wave Boost --
+
+- id: 'irrigation_heat_wave_monitor'
+  alias: Irrigation - Heat Wave Monitor
+  description: >
+    Track consecutive hot days (>35°C). After 3 days, enable daily watering.
+    When temp drops below 32°C for the day, reset and disable boost.
+  triggers:
+  - trigger: time
+    at: "23:00:00"
+  conditions:
+  - condition: state
+    entity_id: input_boolean.irrigation_enabled
+    state: 'on'
+  actions:
+  - variables:
+      max_temp: "{{ states('sensor.your_outdoor_temperature_daily_max') | float(20) }}"
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: "{{ max_temp > 35 }}"
+      sequence:
+      - action: counter.increment
+        target:
+          entity_id: counter.irrigation_hot_days
+      - if:
+        - condition: template
+          value_template: "{{ states('counter.irrigation_hot_days') | int >= 3 }}"
+        - condition: state
+          entity_id: input_boolean.irrigation_heat_boost
+          state: 'off'
+        then:
+        - action: input_boolean.turn_on
+          target:
+            entity_id: input_boolean.irrigation_heat_boost
+    - conditions:
+      - condition: template
+        value_template: "{{ max_temp < 32 }}"
+      sequence:
+      - action: counter.reset
+        target:
+          entity_id: counter.irrigation_hot_days
+      - if:
+        - condition: state
+          entity_id: input_boolean.irrigation_heat_boost
+          state: 'on'
+        then:
+        - action: input_boolean.turn_off
+          target:
+            entity_id: input_boolean.irrigation_heat_boost
+  mode: single
+
+# -- Seasonal Auto-Enable/Disable --
+
+- id: 'irrigation_seasonal_mode'
+  alias: Irrigation - Seasonal Mode
+  description: >
+    When the climate mode changes, auto enable/disable irrigation.
+    Winter/Winter-Eco disables; Spring-Autumn/Summer enables.
+    Optional — delete if you don't run a climate-mode input_select.
+  triggers:
+  - trigger: state
+    entity_id: input_select.your_climate_mode
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.to_state.state in ['Winter', 'Winter-Eco'] }}"
+      sequence:
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.irrigation_enabled
+    - conditions:
+      - condition: template
+        value_template: "{{ trigger.to_state.state in ['Spring-Autumn', 'Summer'] }}"
+      - condition: state
+        entity_id: input_boolean.irrigation_enabled
+        state: 'off'
+      sequence:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.irrigation_enabled
+  mode: single
+
+# -- Pause Days to Pause Until Converter --
+
+- id: 'irrigation_pause_converter'
+  alias: Irrigation - Pause Days Converter
+  description: >
+    When the user sets pause_days > 0 from the dashboard, calculate pause_until
+    date and reset pause_days to 0. Date-based pause is deterministic and
+    doesn't require daily decrement.
+  triggers:
+  - trigger: state
+    entity_id: input_number.irrigation_pause_days
+  conditions:
+  - condition: template
+    value_template: "{{ trigger.to_state.state | float(0) > 0 }}"
+  actions:
+  - variables:
+      days: "{{ trigger.to_state.state | int }}"
+      pause_date: "{{ (now() + timedelta(days=days)).strftime('%Y-%m-%d') }}"
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.irrigation_pause_until
+    data:
+      date: "{{ pause_date }}"
+  - action: input_number.set_value
+    target:
+      entity_id: input_number.irrigation_pause_days
+    data:
+      value: 0
+  mode: single
+
+# -- Manual Zone Run --
+
+- id: 'irrigation_manual_run'
+  alias: Irrigation - Manual Zone Run
+  description: >
+    Dashboard manual run buttons. Runs a single zone with its configured
+    cycle/soak settings. No skip checks — manual overrides everything.
+    Still respects hard stop time.
+  triggers:
+  - trigger: state
+    entity_id:
+    - input_boolean.irrigation_zone_front_zone_1_manual_run
+    - input_boolean.irrigation_zone_back_zone_1_manual_run
+    # Add one line per zone: input_boolean.irrigation_zone_{slug}_manual_run
+    to: 'on'
+  conditions: []
+  actions:
+  - variables:
+      slug: >
+        {{ trigger.entity_id | replace('input_boolean.irrigation_zone_', '') | replace('_manual_run', '') }}
+      # Map each slug to its display name + entity IDs. Add one entry per zone.
+      zone_map:
+        front_zone_1:
+          name: Front Zone 1
+          valve: valve.front_zone_1
+          watering: binary_sensor.front_zone_1_watering
+        back_zone_1:
+          name: Back Zone 1
+          valve: valve.back_zone_1
+          watering: binary_sensor.back_zone_1_watering
+      zone: "{{ zone_map[slug] }}"
+      cycle_min: "{{ states('input_number.irrigation_zone_' ~ slug ~ '_cycle_minutes') | float(5) }}"
+      seasonal_pct: "{{ states('input_number.irrigation_zone_' ~ slug ~ '_seasonal_pct') | int(100) }}"
+      effective_minutes: "{{ [((cycle_min | float) * (seasonal_pct | int) / 100) | round(0) | int, 1] | max }}"
+      zone_cycles: "{{ states('input_number.irrigation_zone_' ~ slug ~ '_cycles') | int(1) }}"
+      zone_soak: "{{ states('input_number.irrigation_zone_' ~ slug ~ '_soak_minutes') | int(20) }}"
+      sentinel: "input_boolean.irrigation_zone_{{ slug }}_running"
+  # Turn off the trigger boolean immediately
+  - action: input_boolean.turn_off
+    target:
+      entity_id: "{{ trigger.entity_id }}"
+  # Set the running sentinel — single source of truth for "this zone is
+  # actively watering (including soak)". Dashboard reads this to flip
+  # the Start button to Stop and show the elapsed timer. The stop path clears
+  # the sentinel, which breaks the cycle loop below.
+  - action: input_boolean.turn_on
+    target:
+      entity_id: "{{ sentinel }}"
+  # Run zone with cycle/soak — abortable via the sentinel
+  - repeat:
+      count: "{{ zone_cycles }}"
+      sequence:
+      - if:
+        - condition: template
+          value_template: "{{ is_state(sentinel, 'on') }}"
+        then:
+        # Replace with your controller's timed-run service.
+        - action: hydrawise.start_watering
+          target:
+            entity_id: "{{ zone.watering }}"
+          data:
+            duration: "{{ effective_minutes }}"
+          continue_on_error: true
+        # Trust the controller to honor the duration we sent. HA's view of
+        # valve state lags cloud reporting by minutes, so waiting on
+        # valve.open/closed is unreliable. Wait the duration we asked for,
+        # exiting early on Stop (sentinel cleared).
+        - wait_template: "{{ is_state(sentinel, 'off') }}"
+          timeout:
+            minutes: "{{ effective_minutes | int + 1 }}"
+        - if:
+          - condition: template
+            value_template: "{{ zone_cycles > 1 and repeat.index < zone_cycles and is_state(sentinel, 'on') }}"
+          then:
+          - delay:
+              minutes: "{{ zone_soak }}"
+  # Clear sentinel when done (normal completion or post-abort cleanup)
+  - action: input_boolean.turn_off
+    target:
+      entity_id: "{{ sentinel }}"
+  mode: queued
+  max: 3

@@ -23,6 +23,7 @@
 # │ CLIMATE          — zones, temperatures, schedules, preheat, AC  │
 # │ ENERGY/EV        — solar charging, EV modes, polling            │
 # │ APPLIANCE        — dishwasher/washer state machine, reminders   │
+# │ IRRIGATION       — zone scheduling, skip thresholds, run state   │
 # │                                                                 │
 # │ Within each HA domain type (input_boolean, input_number, etc.), │
 # │ helpers are tagged with their domain in comments.               │
@@ -84,6 +85,52 @@ input_boolean:
     name: Appliance Solar Reminded Today
     icon: mdi:solar-power
 
+  # ── Irrigation [IRRIGATION] ──────────────────────────────────────────────────
+  # Global controls + per-zone helpers. Per-zone helpers use the slug pattern
+  # irrigation_zone_{slug}_* — duplicate the front_zone_1/back_zone_1 entries
+  # for each real zone you add. Keep slugs in sync with automations/irrigation.yaml
+  # and the dashboard's entities.ts IRRIGATION_ZONES.
+  irrigation_enabled:
+    name: Irrigation Enabled
+    icon: mdi:water
+  irrigation_heat_boost:
+    name: Irrigation Heat Wave Boost
+    icon: mdi:weather-sunny-alert
+  irrigation_manual_stop:
+    name: Irrigation Manual Stop
+    icon: mdi:stop-circle
+  irrigation_run_now:
+    # Dashboard "Run now" button — triggers the daily scheduler on demand.
+    name: Irrigation Run Now
+    icon: mdi:play-circle-outline
+
+  # Per-zone: enabled flag (include zone in scheduled runs)
+  irrigation_zone_front_zone_1_enabled:
+    name: Front Zone 1 - Enabled
+    icon: mdi:sprinkler-variant
+  irrigation_zone_back_zone_1_enabled:
+    name: Back Zone 1 - Enabled
+    icon: mdi:sprinkler-variant
+
+  # Per-zone: manual-run trigger (dashboard single-zone Start button)
+  irrigation_zone_front_zone_1_manual_run:
+    name: Front Zone 1 - Manual Run
+    icon: mdi:play-circle
+  irrigation_zone_back_zone_1_manual_run:
+    name: Back Zone 1 - Manual Run
+    icon: mdi:play-circle
+
+  # Per-zone: running sentinel — single source of truth for "this zone is part
+  # of an active watering session (including soak between cycles)". The
+  # automations set it at the top of each zone block and clear it at the bottom;
+  # the dashboard reads it for the Start↔Stop flip and elapsed-time display.
+  irrigation_zone_front_zone_1_running:
+    name: Front Zone 1 - Running
+    icon: mdi:sprinkler
+  irrigation_zone_back_zone_1_running:
+    name: Back Zone 1 - Running
+    icon: mdi:sprinkler
+
 
 input_select:
   # ── Climate mode [CLIMATE] ──────────────────────────────────────────────────
@@ -134,6 +181,30 @@ input_select:
       - running
       - clean
     icon: mdi:dishwasher
+
+  # ── Irrigation [IRRIGATION] ──────────────────────────────────────────────────
+  irrigation_frequency:
+    name: Irrigation Frequency
+    icon: mdi:calendar-refresh
+    options:
+      - daily
+      - every_other_day
+      - every_2_days
+      - every_3_days
+      - manual_only
+  # Per-zone: front/back group membership (drives the daily rotation)
+  irrigation_zone_front_zone_1_group:
+    name: Front Zone 1 - Group
+    icon: mdi:group
+    options:
+      - front
+      - back
+  irrigation_zone_back_zone_1_group:
+    name: Back Zone 1 - Group
+    icon: mdi:group
+    options:
+      - front
+      - back
 
 
 input_number:
@@ -386,6 +457,130 @@ input_number:
     unit_of_measurement: "%"
     icon: mdi:battery-alert
 
+  # ── Irrigation — global thresholds [IRRIGATION] ──────────────────────────────
+  irrigation_pause_days:
+    name: Irrigation Pause Days
+    icon: mdi:pause-circle
+    min: 0
+    max: 30
+    step: 1
+  irrigation_rain_skip_mm:
+    name: Irrigation Rain Skip Threshold
+    icon: mdi:weather-rainy
+    min: 0
+    max: 50
+    step: 1
+    unit_of_measurement: "mm"
+  irrigation_rain_history_skip_mm:
+    name: Irrigation Rain History Skip
+    icon: mdi:weather-pouring
+    min: 0
+    max: 50
+    step: 1
+    unit_of_measurement: "mm"
+  irrigation_wind_skip_kmh:
+    name: Irrigation Wind Skip Threshold
+    icon: mdi:weather-windy
+    min: 0
+    max: 60
+    step: 5
+    unit_of_measurement: "km/h"
+  irrigation_freeze_temp:
+    name: Irrigation Freeze Skip
+    icon: mdi:snowflake-alert
+    min: 0
+    max: 10
+    step: 1
+    unit_of_measurement: "°C"
+  irrigation_seasonal_cold_temp:
+    name: Irrigation Seasonal Cold Skip
+    icon: mdi:thermometer-low
+    min: 0
+    max: 15
+    step: 1
+    unit_of_measurement: "°C"
+  irrigation_start_time_hour:
+    name: Irrigation Start Hour
+    icon: mdi:clock-start
+    min: 0
+    max: 23
+    step: 1
+  irrigation_start_time_minute:
+    name: Irrigation Start Minute
+    icon: mdi:clock-start
+    min: 0
+    max: 59
+    step: 1
+  irrigation_end_hour:
+    name: Irrigation End Hour
+    icon: mdi:clock-end
+    min: 0
+    max: 23
+    step: 1
+
+  # ── Irrigation — per-zone settings [IRRIGATION] ──────────────────────────────
+  # 4 helpers per zone: cycle_minutes / cycles / soak_minutes / seasonal_pct.
+  # Effective per-cycle runtime = max(1, round(cycle_minutes × seasonal_pct/100)),
+  # repeated `cycles` times with `soak_minutes` between cycles. Duplicate this
+  # group for each zone, swapping the slug.
+  #
+  # Front Zone 1
+  irrigation_zone_front_zone_1_cycle_minutes:
+    name: Front Zone 1 - Cycle Duration
+    icon: mdi:timer
+    min: 0.5
+    max: 60
+    step: 0.5
+    unit_of_measurement: "min"
+  irrigation_zone_front_zone_1_cycles:
+    name: Front Zone 1 - Cycles
+    icon: mdi:repeat
+    min: 1
+    max: 5
+    step: 1
+  irrigation_zone_front_zone_1_soak_minutes:
+    name: Front Zone 1 - Soak Duration
+    icon: mdi:water-opacity
+    min: 5
+    max: 60
+    step: 5
+    unit_of_measurement: "min"
+  irrigation_zone_front_zone_1_seasonal_pct:
+    name: Front Zone 1 - Seasonal Adjustment
+    icon: mdi:percent
+    min: 10
+    max: 200
+    step: 5
+    unit_of_measurement: "%"
+  # Back Zone 1
+  irrigation_zone_back_zone_1_cycle_minutes:
+    name: Back Zone 1 - Cycle Duration
+    icon: mdi:timer
+    min: 0.5
+    max: 60
+    step: 0.5
+    unit_of_measurement: "min"
+  irrigation_zone_back_zone_1_cycles:
+    name: Back Zone 1 - Cycles
+    icon: mdi:repeat
+    min: 1
+    max: 5
+    step: 1
+  irrigation_zone_back_zone_1_soak_minutes:
+    name: Back Zone 1 - Soak Duration
+    icon: mdi:water-opacity
+    min: 5
+    max: 60
+    step: 5
+    unit_of_measurement: "min"
+  irrigation_zone_back_zone_1_seasonal_pct:
+    name: Back Zone 1 - Seasonal Adjustment
+    icon: mdi:percent
+    min: 10
+    max: 200
+    step: 5
+    unit_of_measurement: "%"
+
 
 input_datetime:
   # ── Climate schedules [CLIMATE] ──────────────────────────────────────────────
@@ -414,6 +609,20 @@ input_datetime:
     has_time: true
     has_date: true
 
+  # ── Irrigation [IRRIGATION] ──────────────────────────────────────────────────
+  irrigation_last_run_date:
+    name: Irrigation Last Run Date
+    icon: mdi:calendar-check
+    has_date: true
+    has_time: true
+  irrigation_pause_until:
+    # Date-only. Set by the pause_days converter; the scheduler skips while
+    # today < this date.
+    name: Irrigation Pause Until
+    icon: mdi:pause-circle
+    has_date: true
+    has_time: false
+
 
 timer:
   # ── AC manual mode timers [CLIMATE] ──────────────────────────────────────────
@@ -440,3 +649,32 @@ counter:
     name: Appliance Cycles
     step: 1
     icon: mdi:counter
+
+  # ── Irrigation [IRRIGATION] ──────────────────────────────────────────────────
+  # Consecutive days above the heat-wave temperature; drives heat boost.
+  irrigation_hot_days:
+    name: Irrigation Hot Days Counter
+    icon: mdi:weather-sunny-alert
+    step: 1
+    minimum: 0
+    maximum: 30
+    restore: true
+
+
+input_text:
+  # ── Irrigation — internal run state [IRRIGATION] ─────────────────────────────
+  # Written by the automations, read by the dashboard + morning report.
+  irrigation_last_run_status:
+    # completed / skipped / aborted / paused / hard_stopped / manually_stopped / running
+    name: Irrigation Last Run Status
+    icon: mdi:information
+    max: 255
+  irrigation_last_run_details:
+    name: Irrigation Last Run Details
+    icon: mdi:text
+    max: 255
+  irrigation_last_run_skipped_zones:
+    # Comma-joined slugs of zones that failed mid-run (accumulated during a run).
+    name: Irrigation Last Run Skipped Zones
+    icon: mdi:alert-circle-outline
+    max: 255
