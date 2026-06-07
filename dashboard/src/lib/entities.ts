@@ -829,3 +829,159 @@ export const ROOM_ZONE_MAP: Record<string, ZoneInfo> = {
     overrideTarget: BALCONY_OVERRIDE_TARGET,
   },
 };
+
+// ── Irrigation ────────────────────────────────────────────────────────────────
+//
+// The irrigation view drives a YAML-side scheduler (see docs/templates/config in
+// the kit) through a fixed set of HA helpers. The entity IDs below follow the
+// kit's naming convention — create the matching helpers in Home Assistant and
+// these constants will line up automatically.
+//
+// Irrigation — global controls / scheduler state
+export const IRRIGATION_ENABLED = "input_boolean.irrigation_enabled";
+export const IRRIGATION_HEAT_BOOST = "input_boolean.irrigation_heat_boost";
+export const IRRIGATION_MANUAL_STOP = "input_boolean.irrigation_manual_stop";
+export const IRRIGATION_FREQUENCY = "input_select.irrigation_frequency";
+export const IRRIGATION_PAUSE_DAYS = "input_number.irrigation_pause_days";
+export const IRRIGATION_RAIN_SKIP_MM = "input_number.irrigation_rain_skip_mm";
+export const IRRIGATION_RAIN_HISTORY_SKIP_MM = "input_number.irrigation_rain_history_skip_mm";
+export const IRRIGATION_WIND_SKIP_KMH = "input_number.irrigation_wind_skip_kmh";
+export const IRRIGATION_FREEZE_TEMP = "input_number.irrigation_freeze_temp";
+export const IRRIGATION_SEASONAL_COLD_TEMP = "input_number.irrigation_seasonal_cold_temp";
+export const IRRIGATION_START_HOUR = "input_number.irrigation_start_time_hour";
+export const IRRIGATION_START_MINUTE = "input_number.irrigation_start_time_minute";
+export const IRRIGATION_END_HOUR = "input_number.irrigation_end_hour";
+
+// Irrigation — weather sensors
+export const IRRIGATION_RAIN_YESTERDAY = "sensor.irrigation_rain_yesterday";
+export const IRRIGATION_RAIN_TODAY = "sensor.irrigation_rain_today";
+export const IRRIGATION_RAIN_FORECAST = "sensor.irrigation_rain_forecast_tomorrow";
+export const IRRIGATION_PRECIP_FORECAST_24H = "sensor.irrigation_precip_forecast_24h";
+
+// Irrigation — skip sensors
+export const IRRIGATION_SKIP_RAIN_FORECAST = "binary_sensor.irrigation_skip_rain_forecast";
+export const IRRIGATION_SKIP_RAIN_ACTUAL = "binary_sensor.irrigation_skip_rain_actual";
+export const IRRIGATION_SKIP_WIND = "binary_sensor.irrigation_skip_wind";
+export const IRRIGATION_SKIP_FREEZE = "binary_sensor.irrigation_skip_freeze";
+export const IRRIGATION_SKIP_SEASONAL_COLD = "binary_sensor.irrigation_skip_seasonal_cold";
+export const IRRIGATION_SKIP_ANY = "binary_sensor.irrigation_skip_any";
+
+// Irrigation — state tracking
+export const IRRIGATION_LAST_RUN_STATUS = "input_text.irrigation_last_run_status";
+export const IRRIGATION_LAST_RUN_DETAILS = "input_text.irrigation_last_run_details";
+export const IRRIGATION_LAST_RUN_DATE = "input_datetime.irrigation_last_run_date";
+export const IRRIGATION_LAST_RUN_SKIPPED_ZONES = "input_text.irrigation_last_run_skipped_zones";
+export const IRRIGATION_PAUSE_UNTIL = "input_datetime.irrigation_pause_until";
+export const IRRIGATION_RUN_NOW = "input_boolean.irrigation_run_now";
+
+// Optional connectivity sensor for your valve controller (Hydrawise /
+// OpenSprinkler / Rachio / …). If present, the view disables "Run now" and
+// shows an "offline" status when the controller drops off the network. Leave
+// the helper uncreated if your controller has no such sensor.
+export const IRRIGATION_CONNECTIVITY = "binary_sensor.irrigation_connectivity";
+
+// Prerequisite template sensor you must provide: a rolling 3-day average of the
+// outdoor temperature, used by the "seasonal cold" skip row. Build it with a
+// statistics sensor (mean over 3 days) or a template over OUTDOOR_TEMP history.
+export const IRRIGATION_TEMP_3_DAY_AVG = "sensor.outdoor_temperature_3_day_average";
+
+// Irrigation — zone config
+export interface IrrigationZoneConfig {
+  slug: string;
+  name: string;
+  defaultGroup: "front" | "back";
+  valve: string;
+  watering: string;
+  remaining: string;
+  enabled: string;
+  manualRun: string;
+  running: string;
+  cycleMinutes: string;
+  cycles: string;
+  soakMinutes: string;
+  seasonalPct: string;
+  group: string;
+}
+
+function irrigationZone(slug: string, name: string, defaultGroup: "front" | "back"): IrrigationZoneConfig {
+  return {
+    slug,
+    name,
+    defaultGroup,
+    valve: `valve.${slug}`,
+    watering: `binary_sensor.${slug}_watering`,
+    remaining: `sensor.${slug}_remaining_watering_time`,
+    enabled: `input_boolean.irrigation_zone_${slug}_enabled`,
+    manualRun: `input_boolean.irrigation_zone_${slug}_manual_run`,
+    running: `input_boolean.irrigation_zone_${slug}_running`,
+    cycleMinutes: `input_number.irrigation_zone_${slug}_cycle_minutes`,
+    cycles: `input_number.irrigation_zone_${slug}_cycles`,
+    soakMinutes: `input_number.irrigation_zone_${slug}_soak_minutes`,
+    seasonalPct: `input_number.irrigation_zone_${slug}_seasonal_pct`,
+    group: `input_select.irrigation_zone_${slug}_group`,
+  };
+}
+
+// Each zone derives all of its entity IDs from its `slug` via `irrigationZone()`:
+//   - `valve.{slug}`                         — the valve entity exposed by your
+//                                              controller (the hardware actuator)
+//   - `binary_sensor.{slug}_watering`        — "actively watering" sensor; the
+//                                              view pairs its on→off transitions
+//                                              into the run-history timeline
+//   - `sensor.{slug}_remaining_watering_time`— optional remaining-time sensor
+//   - `input_*.irrigation_zone_{slug}_*`     — the per-zone HA helpers you create
+//                                              (enabled / manual_run / running /
+//                                              cycle_minutes / cycles /
+//                                              soak_minutes / seasonal_pct / group)
+//
+// Front/back group model: every zone belongs to either the "front" or "back"
+// group. The scheduler waters one group per run based on the chosen frequency
+// (e.g. front on even days, back on odd days), so you can split a property into
+// two halves and alternate watering between them.
+//
+// To add a zone: add one `irrigationZone(slug, label, group)` line below AND
+// create the matching Home Assistant helpers (see docs/templates/config in the
+// kit). The two zones here are placeholders — replace them with your own.
+export const IRRIGATION_ZONES: IrrigationZoneConfig[] = [
+  irrigationZone("front_zone_1", "Front Zone 1", "front"),
+  irrigationZone("back_zone_1", "Back Zone 1", "back"),
+];
+
+export type IrrigationGroup = "front" | "back";
+
+export function isIrrigationGroup(s: string | undefined): s is IrrigationGroup {
+  return s === "front" || s === "back";
+}
+
+/** Single source of truth for the effective per-cycle runtime — used by both the
+ * card display and the popup header so they can't disagree. Mirrors the daily
+ * scheduler's per-zone effective_minutes_safe formula. */
+export function effectiveCycleMinutes(cycleMin: number, seasonalPct: number): number {
+  return Math.max(1, Math.round(cycleMin * seasonalPct / 100));
+}
+
+export interface IrrigationZoneNumericParam {
+  entity: string;
+  label: string;
+  unit: string;
+  min: number;
+  max: number;
+  step: number;
+  /** Fallback value if the helper is unavailable/unknown at popup mount. */
+  fallback: number;
+}
+
+/** Per-zone tunable numeric parameters, mirroring the configuration ranges. */
+export function irrigationZoneNumericParams(zone: IrrigationZoneConfig): {
+  cycleMinutes: IrrigationZoneNumericParam;
+  cycles: IrrigationZoneNumericParam;
+  soakMinutes: IrrigationZoneNumericParam;
+  seasonalPct: IrrigationZoneNumericParam;
+} {
+  return {
+    cycleMinutes: { entity: zone.cycleMinutes, label: "Cycle minutes",        unit: " min", min: 0.5, max: 60,  step: 0.5, fallback: 5 },
+    cycles:       { entity: zone.cycles,       label: "Cycles",               unit: "",     min: 1,   max: 5,   step: 1,   fallback: 1 },
+    soakMinutes:  { entity: zone.soakMinutes,  label: "Soak between cycles",  unit: " min", min: 5,   max: 60,  step: 5,   fallback: 20 },
+    seasonalPct:  { entity: zone.seasonalPct,  label: "Seasonal adjustment",  unit: "%",    min: 10,  max: 200, step: 5,   fallback: 100 },
+  };
+}
