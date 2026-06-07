@@ -112,3 +112,18 @@ changes:
       Optional feature. Follow docs/templates/recipes/README.md to copy the dashboard
       files, merge the config fragment, add the LLM secrets, and wire the nav entry.
     default_action: skip-if-absent
+
+  - id: upgrade-skill
+    version: 0.3.0
+    type: feature
+    breaking: false
+    title: "Upgrade skill — consumer-side selective apply"
+    commits: ["6350d64"]
+    conditions: "Applies to any install on an older kit version."
+    detect: >
+      Install has no .claude/skills/upgrade — it predates the consumer-side upgrade
+      workflow and can only update via a manual git pull.
+    apply: >
+      Add the upgrade skill (.claude/skills/upgrade/ + references/apply-rubric.md) from
+      the kit. With it in place, future upgrades are agent-driven and selective.
+    default_action: ask

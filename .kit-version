@@ -2,5 +2,5 @@
 # In the KIT repo: the current released version (authoritative — bumped by the `release` skill).
 # In an INSTALL: `commit` is stamped by setup-infrastructure; both are bumped by `upgrade` (Phase 3).
 # `commit` is the history-independent baseline anchor (used when git history is absent, e.g. a ZIP install).
-version: 0.2.0
+version: 0.3.0
 commit: ""

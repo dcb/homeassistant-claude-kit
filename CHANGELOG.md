@@ -8,6 +8,12 @@ by the `release` skill — do not edit it by hand.
 To upgrade an existing install to a newer version, run the `upgrade` skill (it reads the structured
 entries in `kit-changelog.yaml` and applies the changes that are still relevant to your install).
 
+## [0.3.0] - 2026-06-07
+
+### Added
+
+- Upgrade skill — consumer-side selective apply: reads `kit-changelog.yaml`, resolves the baseline (recorded-commit-first), and applies only the changes still relevant to a diverged install, on a work branch (never a blind merge). Safe by construction: an auto-apply allowlist (no upstream→RCE), secret-path guards, git 3-way merge with inline markers, per-area validation, and a resumable tracker. `detect`/`apply` are never executed. (6350d64)
+
 ## [0.2.0] - 2026-06-07
 
 ### Added
@@ -28,5 +34,6 @@ entries in `kit-changelog.yaml` and applies the changes that are still relevant 
 
 Initial release baseline.
 
+[0.3.0]: https://github.com/dcb/homeassistant-claude-kit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dcb/homeassistant-claude-kit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/dcb/homeassistant-claude-kit/releases/tag/v0.1.0
