@@ -189,6 +189,15 @@ input_boolean:
   zone_override_family:
     name: Zone Override Family Room
     icon: mdi:thermostat
+  ac_manual_downstairs:
+    name: AC Manual Downstairs
+    icon: mdi:air-conditioner
+  ac_manual_master:
+    name: AC Manual Master Bed
+    icon: mdi:air-conditioner
+  ac_manual_family:
+    name: AC Manual Family Room
+    icon: mdi:air-conditioner
 
 input_select:
   climate_mode:
@@ -297,3 +306,27 @@ input_number:
     initial: 70
     unit_of_measurement: "°F"
     icon: mdi:thermometer
+  ac_timer_downstairs:
+    name: AC Timer Downstairs
+    min: 0
+    max: 480
+    step: 15
+    initial: 0
+    unit_of_measurement: min
+    icon: mdi:timer-outline
+  ac_timer_master:
+    name: AC Timer Master Bed
+    min: 0
+    max: 480
+    step: 15
+    initial: 0
+    unit_of_measurement: min
+    icon: mdi:timer-outline
+  ac_timer_family:
+    name: AC Timer Family Room
+    min: 0
+    max: 480
+    step: 15
+    initial: 0
+    unit_of_measurement: min
+    icon: mdi:timer-outline
