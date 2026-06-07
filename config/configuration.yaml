@@ -100,6 +100,13 @@ template:
       - default_entity_id: sensor.asterix_charge_limit_template
         name: Asterix Charge Limit - Template
         state: "{{ states('number.asterix_charge_limit') }}"
+  - sensor:
+      - name: "Outdoor Temperature Now"
+        unique_id: outdoor_temperature_now
+        unit_of_measurement: "°F"
+        device_class: temperature
+        state_class: measurement
+        state: "{{ state_attr('weather.dream_home', 'temperature') | float(0) }}"
   - trigger:
     - trigger: time_pattern
       hours: /1
@@ -134,6 +141,13 @@ template:
         unique_id: current_weather_condition
         state: >
           {{ hourly_data['weather.dream_home'].forecast[0].condition }}
+
+      - name: "Precipitation Next Hour"
+        unique_id: precipitation_next_hour
+        unit_of_measurement: "in"
+        device_class: precipitation
+        state: >
+          {{ hourly_data['weather.dream_home'].forecast[0].precipitation | float(0) }}
 
   - sensor:
       - name: "Zone Effective Target Downstairs"

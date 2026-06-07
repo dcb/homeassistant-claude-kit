@@ -22,7 +22,7 @@ export interface ContextConfig {
   evCharging: string;
   weather: string;
   outdoorTemp: string;
-  outdoorHumidity?: string;
+  precipitation?: string;
   indoorPressure?: string;
   forecastLow?: string;
   forecastHigh?: string;
@@ -235,7 +235,7 @@ export const CAMERAS: CameraConfig[] = [
 // ── Header (top bar) ─────────────────────────────────────────────────────
 export const HEADER_CONFIG: HeaderConfig = {
   climateMode: CLIMATE_MODE,
-  outdoorTemp: "sensor.garage_temperature",
+  outdoorTemp: "sensor.outdoor_temperature_now",
   weather: WEATHER,
   persons: [
     { id: "person.hori_goller",  name: "Hori" },
@@ -256,8 +256,8 @@ export const CONTEXT_CONFIG: ContextConfig = {
   evBattery:           EV_BATTERY,
   evCharging:          EV_CHARGING,
   weather:             WEATHER,
-  outdoorTemp:         "sensor.garage_temperature",
-  outdoorHumidity:     "sensor.garage_humidity",
+  outdoorTemp:         "sensor.outdoor_temperature_now",
+  precipitation:       "sensor.precipitation_next_hour",
 };
 
 // ── Quick actions (mode toggles on home screen) ───────────────────────────

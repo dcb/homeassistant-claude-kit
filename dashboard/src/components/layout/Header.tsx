@@ -12,8 +12,9 @@ export function Header({ config }: HeaderProps) {
   const entities = useHass((s) => s.entities) as HassEntities;
 
   const climateMode = entities[config.climateMode]?.state ?? "—";
+  const weatherState = entities[config.weather]?.state;
   const outdoorTemp = entities[config.outdoorTemp]?.state;
-  const weather = entities[config.weather]?.state;
+  const outdoorTempDisplay = formatTemp(outdoorTemp) ? `${formatTemp(outdoorTemp)}°F` : null;
 
   return (
     <header className="sticky top-0 z-30 flex min-w-0 items-center gap-2 bg-bg-primary/80 px-4 py-2 text-xs backdrop-blur-md">
@@ -38,10 +39,10 @@ export function Header({ config }: HeaderProps) {
       <div className="min-w-0 flex-1" />
 
       {/* Weather + mode — truncate if needed */}
-      {formatTemp(outdoorTemp) && (
-        <span className="truncate text-text-secondary">
-          {formatTemp(outdoorTemp)}°C
-          {weather ? ` · ${weather}` : ""}
+      {(outdoorTempDisplay ?? weatherState) && (
+        <span className="shrink-0 text-text-secondary">
+          {outdoorTempDisplay ?? ""}
+          {weatherState ? `${outdoorTempDisplay ? " · " : ""}${weatherState}` : ""}
         </span>
       )}
 

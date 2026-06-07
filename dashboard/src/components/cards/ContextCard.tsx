@@ -54,7 +54,7 @@ export function ContextCard({ config }: { config: ContextConfig }) {
   const weatherState = entities[config.weather]?.state ?? "sunny";
   const weatherAttrs = entities[config.weather]?.attributes ?? {};
   const outdoorTemp = parseNumericState(entities[config.outdoorTemp]?.state);
-  const humidity = parseNumericState(entities[config.outdoorHumidity ?? ""]?.state);
+  const precipitation = parseNumericState(entities[config.precipitation ?? ""]?.state);
   const pressure = parseNumericState(entities[config.indoorPressure ?? ""]?.state);
   const windSpeed = weatherAttrs.wind_speed as number | undefined;
   const windBearing = weatherAttrs.wind_bearing as number | undefined;
@@ -150,10 +150,10 @@ export function ContextCard({ config }: { config: ContextConfig }) {
 
       {/* Weather stats row */}
       <div className="mt-2 flex items-center justify-end gap-4 text-xs text-text-secondary">
-        {humidity !== null && (
+        {precipitation !== null && (
           <span className="flex items-center gap-1">
-            <Icon icon="meteocons:humidity" width={18} />
-            {Math.round(humidity)}%
+            <Icon icon="meteocons:rain" width={18} />
+            {precipitation.toFixed(2)} in
           </span>
         )}
         {windSpeed != null && (
