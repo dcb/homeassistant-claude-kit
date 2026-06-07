@@ -1,0 +1,35 @@
+# kit-changelog.yaml — structured source of truth for homeassistant-claude-kit.
+# SELF-DESCRIBING: the `schema:` block below is the contract an agent reads cold.
+# Rendered to CHANGELOG.md by the `release` skill — NEVER hand-edit CHANGELOG.md.
+# Entries are APPEND-ONLY: `release` never rewrites an existing entry (hand-edits to
+# detect/apply are tolerated). detect / apply / conditions are agent-INTERPRETED prose
+# and are NEVER executed as code. Write them generically — never embed a specific entity ID.
+schema_version: 1
+
+schema:
+  id:             "stable kebab-case slug — permanent identity; key for the Phase-3 applied-ledger; never reused/rewritten"
+  version:        "semver string the change first shipped in"
+  type:           "fix | feature | change | removed | security — drives the CHANGELOG section ONLY"
+  breaking:       "bool — orthogonal to type; drives the version bump and the [**BREAKING**] render prefix"
+  title:          "one-line human summary; becomes the CHANGELOG bullet"
+  commits:        "list of short SHAs — the ground-truth diff (git show); apply must stay within baseline..target"
+  conditions:     "PRESENCE gate (prose): does this file/feature exist in the install at all? cheap short-circuit before detect"
+  detect:         "RELEVANCE gate: agent-interpreted PROSE, NEVER executed — the pattern that means you're affected; generic, no entity IDs"
+  detect_hint:    "OPTIONAL advisory aid — { grep: <generic regex>, files: [<glob>] }; never executed, never an entity ID"
+  apply:          "agent-interpreted guidance to adapt the diff to a diverged install; ground truth is `commits`; generic, no entity IDs"
+  default_action: "auto | ask | skip-if-absent — a CEILING the entry requests, NEVER authority to run transported files"
+
+# Bump rule (0.x): default PATCH for any releasable entry; escalate to MINOR iff any entry is
+# `feature` or `breaking`; highest-wins. At >= 1.0.0, `breaking` -> MAJOR.
+
+changes:
+  - id: baseline-v0-1-0
+    version: 0.1.0
+    type: feature
+    breaking: false
+    title: "Initial release baseline"
+    commits: ["2fbf556"]
+    conditions: ""
+    detect: ""
+    apply: ""
+    default_action: skip-if-absent
