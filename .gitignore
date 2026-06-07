@@ -26,6 +26,9 @@ downloads/
 eggs/
 .eggs/
 lib/
+# R1: the Python `lib/` rule above also matched the dashboard's source dir; re-include it.
+# The user-specific entities.ts/areas.ts ship as compile-ready scaffolds (overwritten by setup-customize).
+!dashboard/src/lib/
 lib64/
 parts/
 sdist/
