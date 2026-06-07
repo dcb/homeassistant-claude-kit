@@ -1,7 +1,7 @@
 ---
 title: v0.3.0 — the upgrade skill (consumer-side selective apply)
 type: feat
-status: active
+status: completed
 date: 2026-06-07
 origin: docs/brainstorms/2026-06-07-kit-versioning-agent-upgrade-brainstorm.md
 ---
