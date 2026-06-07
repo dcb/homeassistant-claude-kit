@@ -1,7 +1,7 @@
 ---
 title: Kit Versioning + Agent-Driven Upgrade System — Phase 1 (Foundation)
 type: feat
-status: active
+status: completed
 date: 2026-06-07
 origin: docs/brainstorms/2026-06-07-kit-versioning-agent-upgrade-brainstorm.md
 ---
@@ -180,7 +180,7 @@ changes:
 
 ## Acceptance Criteria
 ### Functional
-- [~] `v0.1.0` tag on the confirmed SHA (`2fbf556`), created **before** the R1 commit — **created locally; push pending maintainer confirmation**.
+- [x] `v0.1.0` tag on the confirmed SHA (`2fbf556`), created **before** the R1 commit — pushed to origin. ✓
 - [x] R1: `lib/` ignore narrowed (`!dashboard/src/lib/`); **all** of `dashboard/src/lib/` tracked incl. `adapters/` and the `entities.ts`/`areas.ts` scaffolds; `git check-ignore -v` confirmed un-ignored set + Python paths still ignored; **fresh `git clone` compiles with NO setup step** (`tsc -b --noEmit` exit 0). ✓ verified
 - [x] `.kit-version` (`version: 0.1.0`, `commit`) committed; producer/consumer role guard (Step 10 writes only `commit`).
 - [x] `kit-changelog.yaml` self-describing (inline `schema:` + `schema_version`) with the seed `v0.1.0` entry; `tools/validate_changelog.py` passes (✓ + invalid-fixture failures verified).
